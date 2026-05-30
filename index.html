@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>2D 倒立擺 - 蓄力彈擊與邊界限制</title>
+    <title>2D 倒立擺 - 鏡頭跟隨與無限地圖</title>
     <style>
         body {
             display: flex;
@@ -11,15 +11,15 @@
             align-items: center;
             height: 100vh;
             margin: 0;
-            background-color: #222;
+            background-color: #1a1a1a;
             color: #eee;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             user-select: none;
         }
         canvas {
-            background-color: #333;
+            background-color: #2b2b2b;
             border: 2px solid #555;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
             border-radius: 8px;
         }
         .instructions {
@@ -30,16 +30,15 @@
             line-height: 1.5;
         }
         .highlight { color: #4CAF50; font-weight: bold; }
-        .warning { color: #FFEB3B; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <h2>倒立擺 (Cart-Pole) 蓄力彈擊版</h2>
+    <h2>倒立擺 (Cart-Pole) 鏡頭跟隨版</h2>
     <canvas id="simCanvas" width="800" height="500"></canvas>
     <div class="instructions">
-        點擊並<span class="warning">長按棍子蓄力</span>，<span class="highlight">放開滑鼠</span>瞬間給予彈擊！<br>
-        推力已調弱，且小車碰到邊界會自動反彈。
+        點擊並長按棍子蓄力，放開給予彈擊。<br>
+        小車現在可以<span class="highlight">無限往外跑</span>，鏡頭會自動平滑跟隨！
     </div>
 
     <script>
@@ -51,7 +50,7 @@
         const M = 1.0;   
         const m = 0.2;   
         const l = 1.0;   
-        const scale = 100; 
+        const scale = 100; // 1公尺 = 100像素
         const polePixelLength = l * 2 * scale; 
 
         let x = 0.0;          
@@ -59,16 +58,20 @@
         let theta = 0.05;     
         let theta_dot = 0.0;  
 
+        // PID 參數：因為沒有邊界了，稍微降低對 X 軸的執著，讓他跑遠一點再拉回來會比較自然
         const Kp_theta = 300.0; 
         const Kd_theta = 60.0;
-        const Kp_x = 8.0;
-        const Kd_x = 12.0;
+        const Kp_x = 3.0;  // 【調弱】讓小車可以離開中心遠一點
+        const Kd_x = 8.0;
 
-        // --- 互動狀態變數 ---
+        // --- 互動與鏡頭變數 ---
         let isTouching = false;    
         let touchHitDist = 0;      
         let touchSide = 1;         
-        let chargeRatio = 0; // 【修改】蓄力比例，範圍 0.0 到 1.0 (代表 0% 到 100%)
+        let chargeRatio = 0.0; 
+        
+        // 【新增】攝影機的 X 座標
+        let cameraX = 0.0; 
 
         // --- 物理引擎 ---
         function physicsStep(dt, force) {
@@ -77,51 +80,72 @@
             const sinTheta = Math.sin(theta);
             const cosTheta = Math.cos(theta);
 
-            // 小車的水平動力學 (移除原先持續施加的外力)
             const temp = (force + ml * theta_dot * theta_dot * sinTheta) / totalMass;
             let theta_acc = (gravity * sinTheta - cosTheta * temp) / 
                             (l * (4.0 / 3.0 - (m * cosTheta * cosTheta) / totalMass));
             const x_acc = temp - (ml * theta_acc * cosTheta) / totalMass;
 
-            // 數值積分
             x_dot += x_acc * dt;
             theta_dot += theta_acc * dt;
             x += x_dot * dt;
             theta += theta_dot * dt;
-
-            // 【新增】邊界碰撞限制 (防止移出畫面)
-            // 畫面寬度800px，中心400px，小車寬100px。
-            // 允許的物理X座標極限約為正負 3.0 公尺 (300px)
-            const max_x = 3.0;
-            if (x > max_x) {
-                x = max_x;            // 強制拉回邊界內
-                x_dot = -x_dot * 0.5; // 撞牆反彈，並損失 50% 的動能
-            } else if (x < -max_x) {
-                x = -max_x;
-                x_dot = -x_dot * 0.5;
-            }
+            
+            // 【移除】移除了撞牆限制，現在宇宙是無限的！
         }
 
         // --- 繪圖邏輯 ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            const screenX = canvas.width / 2 + x * scale;
+            // 【新增】平滑鏡頭跟隨 (Lerp)
+            // 攝影機每一幀向小車位置靠近 10%，產生電影般的跟隨延遲感
+            cameraX += (x - cameraX) * 0.1;
+
+            // 螢幕中心點基準
+            const screenCenter = canvas.width / 2;
             const screenY = 400; 
 
-            // 軌道與邊界牆示意
+            // 計算小車在螢幕上的實際 X 座標 (將物理座標減去鏡頭座標)
+            const cartScreenX = screenCenter + (x - cameraX) * scale;
+
+            // --- 繪製無限軌道與 X 軸座標 ---
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, screenY);
+            ctx.lineTo(canvas.width, screenY);
+            ctx.stroke();
+
+            // 動態計算當前畫面涵蓋的公尺範圍 (例如從 -4m 到 +4m)
+            const viewRadiusInMeters = (canvas.width / 2) / scale;
+            const startMeter = Math.floor(cameraX - viewRadiusInMeters);
+            const endMeter = Math.ceil(cameraX + viewRadiusInMeters);
+
+            // 畫出 X 軸的刻度與數字
             ctx.fillStyle = '#888';
-            ctx.fillRect(50, screenY, 700, 4); // 縮短軌道以符合邊界
-            ctx.fillRect(50, screenY - 20, 10, 24); // 左擋板
-            ctx.fillRect(740, screenY - 20, 10, 24); // 右擋板
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            for (let i = startMeter; i <= endMeter; i++) {
+                // 將這個公尺刻度轉換成螢幕座標
+                const tickScreenX = screenCenter + (i - cameraX) * scale;
+                
+                // 畫小短線 (刻度)
+                ctx.beginPath();
+                ctx.moveTo(tickScreenX, screenY);
+                ctx.lineTo(tickScreenX, screenY + 10);
+                ctx.stroke();
+                
+                // 標示數字 (加上 "m" 單位)
+                ctx.fillText(i + 'm', tickScreenX, screenY + 25);
+            }
 
-            // 小車
+            // --- 繪製小車 ---
             ctx.fillStyle = '#4CAF50';
-            ctx.fillRect(screenX - 50, screenY - 20, 100, 40); 
+            ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
 
-            // 擺桿
+            // --- 繪製擺桿 ---
             ctx.save(); 
-            ctx.translate(screenX, screenY); 
+            ctx.translate(cartScreenX, screenY); 
             ctx.rotate(theta); 
             
             ctx.fillStyle = '#F44336';
@@ -130,10 +154,9 @@
             
             // 蓄力視覺指示器
             if (isTouching) {
-                // 依照蓄力比例改變顏色 (黃 -> 橘紅)
                 ctx.fillStyle = `rgb(255, ${255 - chargeRatio * 150}, 0)`;
                 const yPos = -touchHitDist * scale; 
-                const visualForceLen = chargeRatio * 60; // 最大長度 60px
+                const visualForceLen = chargeRatio * 60; 
                 
                 if (touchSide === 1) {
                     ctx.fillRect(-poleWidth/2 - visualForceLen, yPos - 3, visualForceLen, 6);
@@ -142,7 +165,6 @@
                 }
             }
             
-            // 軸心
             ctx.fillStyle = '#fff';
             ctx.beginPath();
             ctx.arc(0, 0, 5, 0, Math.PI * 2);
@@ -154,12 +176,12 @@
         function loop() {
             const dt = 1.0 / 60.0; 
 
-            // 【新增】處理長按蓄力邏輯
             if (isTouching) {
-                chargeRatio += 1.5 * dt; // 蓄力速度：大約 0.66 秒集滿
-                if (chargeRatio > 1.0) chargeRatio = 1.0; // 鎖定在 100%
+                chargeRatio += 1.5 * dt; 
+                if (chargeRatio > 1.0) chargeRatio = 1.0; 
             }
 
+            // PID 控制力計算
             let controlForce = (Kp_theta * theta) + 
                                (Kd_theta * theta_dot) + 
                                (Kp_x * x) + 
@@ -172,13 +194,14 @@
             requestAnimationFrame(loop);
         }
 
-        // --- 互動偵測 ---
+        // --- 互動偵測 (考量鏡頭偏移) ---
         canvas.addEventListener('mousedown', (e) => {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left; 
             const mouseY = e.clientY - rect.top; 
 
-            const cartScreenX = canvas.width / 2 + x * scale;
+            // 【重要】現在小車的螢幕位置必須把鏡頭 (cameraX) 考慮進去
+            const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
             const cartScreenY = 400;
             
             const dx = mouseX - cartScreenX;
@@ -189,24 +212,17 @@
 
             if (local_y <= 0 && local_y >= -polePixelLength && local_x >= -15 && local_x <= 15) {
                 isTouching = true;
-                chargeRatio = 0.0; // 從 0 開始蓄力
+                chargeRatio = 0.0; 
                 touchHitDist = Math.abs(local_y) / scale; 
                 touchSide = local_x < 0 ? 1 : -1;
             }
         });
 
-        // 【修改】滑鼠放開時才給予瞬間推力 (衝量)
         window.addEventListener('mouseup', () => {
             if (isTouching) {
-                // maxKick 是一個經驗常數，調小這個值就能把推力變小
                 const maxKick = 2.5; 
-                
-                // 衝量 = 方向 * 蓄力比例 * 力臂長度 * 最大推力基數
                 const impulse = touchSide * chargeRatio * touchHitDist * maxKick;
-                
-                // 瞬間改變角速度
                 theta_dot += impulse;
-
                 isTouching = false;
                 chargeRatio = 0.0;
             }
