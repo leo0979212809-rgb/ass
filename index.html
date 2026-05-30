@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>676767676767676767676767676767676767676767676767676767676767676767676767676767</title>
+    <title>但姜陸柒亡</title>
     <style>
         body {
             display: flex;
@@ -40,10 +40,6 @@
     <script>
         const canvas = document.getElementById('simCanvas');
         const ctx = canvas.getContext('2d');
-
-        // --- 載入冰紅茶圖片 ---
-        const cartImg = new Image();
-        cartImg.src = 'tea.jpg'; // 確保圖片跟 HTML 檔在同一個資料夾
 
         // --- 物理常數與狀態 ---
         const gravity = 9.81;
@@ -127,19 +123,9 @@
                 ctx.fillText(i + 'm', tickScreenX, screenY + 30);
             }
 
-            // --- 繪製冰紅茶 (取代原本的小車) ---
-            if (cartImg.complete && cartImg.naturalHeight !== 0) {
-                ctx.save();
-                ctx.translate(cartScreenX, screenY);
-                ctx.rotate(Math.PI / 2); // 將直立的圖片旋轉 90 度變成橫的
-                // 調整繪製尺寸：原本車子是 100x40，這裡設定為長 120，粗 50 讓比例好看一點
-                ctx.drawImage(cartImg, -25, -60, 50, 120); 
-                ctx.restore();
-            } else {
-                // 如果圖片還沒讀取成功，或是找不到圖片，先畫原本的綠色方塊當備用
-                ctx.fillStyle = '#4CAF50';
-                ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
-            }
+            // 繪製小車
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
 
             // 繪製擺桿
             ctx.save(); 
@@ -224,8 +210,10 @@
             const local_x = dx * Math.cos(theta) + dy * Math.sin(theta);
             const local_y = -dx * Math.sin(theta) + dy * Math.cos(theta);
 
+            // 【修改】擴大感應範圍：X軸寬度放大到 -40 到 40，Y軸上下多加 20px 的容錯
             if (local_y <= 20 && local_y >= -(polePixelLength + 20) && local_x >= -40 && local_x <= 40) {
                 isDragging = true;
+                // 為了避免抓取點超出視覺棍子長度，用 Math.max 和 Math.min 限制抓取位置
                 let bounded_local_y = Math.min(0, Math.max(-polePixelLength, local_y));
                 grabPointDist = Math.abs(bounded_local_y) / scale; 
                 currentMouseX = mouseX;
