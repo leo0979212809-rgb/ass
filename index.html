@@ -95,9 +95,9 @@
 
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
-            // 繪製軌道
-            ctx.strokeStyle = '#555';
-            ctx.lineWidth = 2;
+            // 繪製軌道 (顏色調亮，線條加粗)
+            ctx.strokeStyle = '#777'; 
+            ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(0, screenY);
             ctx.lineTo(canvas.width, screenY);
@@ -107,20 +107,23 @@
             const startMeter = Math.floor(cameraX - viewRadiusInMeters);
             const endMeter = Math.ceil(cameraX + viewRadiusInMeters);
 
-            // 繪製刻度與公尺數字 (已加回)
-            ctx.fillStyle = '#888';
-            ctx.font = '14px Arial';
+            // 繪製刻度與公尺數字 (改成純白、加粗、字體放大)
+            ctx.fillStyle = '#FFFFFF'; 
+            ctx.strokeStyle = '#FFFFFF'; 
+            ctx.lineWidth = 2;
+            ctx.font = 'bold 16px Arial'; 
             ctx.textAlign = 'center';
             for (let i = startMeter; i <= endMeter; i++) {
                 const tickScreenX = screenCenter + (i - cameraX) * scale;
                 
+                // 畫小短線 (刻度加長)
                 ctx.beginPath();
                 ctx.moveTo(tickScreenX, screenY);
-                ctx.lineTo(tickScreenX, screenY + 10);
+                ctx.lineTo(tickScreenX, screenY + 12);
                 ctx.stroke();
                 
-                // 標示數字
-                ctx.fillText(i + 'm', tickScreenX, screenY + 25);
+                // 標示數字 (位置稍微往下挪一點避免擠在一起)
+                ctx.fillText(i + 'm', tickScreenX, screenY + 30);
             }
 
             // 繪製小車
@@ -201,7 +204,6 @@
 
         window.addEventListener('mouseup', () => {
             if (isTouching) {
-                // 【修改】推力基數調回 5.0，讓彈擊感更明顯
                 const maxKick = 5.0; 
                 const impulse = touchSide * chargeRatio * touchHitDist * maxKick;
                 theta_dot += impulse;
