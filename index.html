@@ -22,6 +22,7 @@
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
             border-radius: 8px;
             margin-top: 20px;
+            cursor: crosshair; /* 游標改成十字準心增加拖曳感 */
         }
         h1 {
             margin: 0;
@@ -58,11 +59,12 @@
         const Kp_x = 3.0;  
         const Kd_x = 8.0;
 
-        // --- 互動與鏡頭變數 ---
-        let isTouching = false;    
-        let touchHitDist = 0;      
-        let touchSide = 1;         
-        let chargeRatio = 0.0; 
+        // --- 互動與鏡頭變數 (改為拖曳系統) ---
+        let isDragging = false;    // 是否正在拖曳
+        let dragHitDist = 0;       // 抓取點距離軸心的物理長度 (公尺)
+        let mouseX = 0;            // 滑鼠當前的螢幕 X 座標
+        let mouseY = 0;            // 滑鼠當前的螢幕 Y 座標
+        const dragSpringK = 150.0; // 虛擬彈簧的強度 (越大拉力越強)
         
         let cameraX = 0.0; 
 
@@ -73,10 +75,37 @@
             const sinTheta = Math.sin(theta);
             const cosTheta = Math.cos(theta);
 
+            // 原本的 PID 控制力計算
             const temp = (force + ml * theta_dot * theta_dot * sinTheta) / totalMass;
             let theta_acc = (gravity * sinTheta - cosTheta * temp) / 
                             (l * (4.0 / 3.0 - (m * cosTheta * cosTheta) / totalMass));
             const x_acc = temp - (ml * theta_acc * cosTheta) / totalMass;
+
+            // 【新增】如果玩家正在拖曳，加入彈簧拉力的力矩影響
+            if (isDragging) {
+                // 1. 計算抓取點的「物理世界座標」
+                const grab_x = x + dragHitDist * Math.sin(theta);
+                const grab_y = -dragHitDist * Math.cos(theta); // 0是軌道，往上是負的
+
+                // 2. 計算滑鼠的「物理世界座標」
+                const mouse_phys_x = (mouseX - canvas.width / 2) / scale + cameraX;
+                const mouse_phys_y = (mouseY - 400) / scale;
+
+                // 3. 虎克定律：計算彈簧拉力 (向量)
+                const force_x = dragSpringK * (mouse_phys_x - grab_x);
+                const force_y = dragSpringK * (mouse_phys_y - grab_y);
+
+                // 4. 計算力臂向量
+                const r_x = dragHitDist * Math.sin(theta);
+                const r_y = -dragHitDist * Math.cos(theta);
+
+                // 5. 向量外積求力矩 (Torque = r x F)
+                const torque = r_x * force_y - r_y * force_x;
+                
+                // 6. 將力矩轉化為角加速度並加上去
+                const inertia = (4.0 / 3.0) * m * (l * l);
+                theta_acc += torque / inertia;
+            }
 
             x_dot += x_acc * dt;
             theta_dot += theta_acc * dt;
@@ -92,10 +121,9 @@
 
             const screenCenter = canvas.width / 2;
             const screenY = 400; 
-
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
-            // 繪製軌道 (顏色調亮，線條加粗)
+            // 繪製軌道
             ctx.strokeStyle = '#777'; 
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -103,11 +131,11 @@
             ctx.lineTo(canvas.width, screenY);
             ctx.stroke();
 
+            // 繪製刻度
             const viewRadiusInMeters = (canvas.width / 2) / scale;
             const startMeter = Math.floor(cameraX - viewRadiusInMeters);
             const endMeter = Math.ceil(cameraX + viewRadiusInMeters);
 
-            // 繪製刻度與公尺數字 (改成純白、加粗、字體放大)
             ctx.fillStyle = '#FFFFFF'; 
             ctx.strokeStyle = '#FFFFFF'; 
             ctx.lineWidth = 2;
@@ -115,14 +143,10 @@
             ctx.textAlign = 'center';
             for (let i = startMeter; i <= endMeter; i++) {
                 const tickScreenX = screenCenter + (i - cameraX) * scale;
-                
-                // 畫小短線 (刻度加長)
                 ctx.beginPath();
                 ctx.moveTo(tickScreenX, screenY);
                 ctx.lineTo(tickScreenX, screenY + 12);
                 ctx.stroke();
-                
-                // 標示數字 (位置稍微往下挪一點避免擠在一起)
                 ctx.fillText(i + 'm', tickScreenX, screenY + 30);
             }
 
@@ -139,33 +163,40 @@
             const poleWidth = 14; 
             ctx.fillRect(-poleWidth/2, -polePixelLength, poleWidth, polePixelLength); 
             
-            if (isTouching) {
-                ctx.fillStyle = `rgb(255, ${255 - chargeRatio * 150}, 0)`;
-                const yPos = -touchHitDist * scale; 
-                const visualForceLen = chargeRatio * 60; 
-                
-                if (touchSide === 1) {
-                    ctx.fillRect(-poleWidth/2 - visualForceLen, yPos - 3, visualForceLen, 6);
-                } else {
-                    ctx.fillRect(poleWidth/2, yPos - 3, visualForceLen, 6);
-                }
-            }
-            
+            // 軸心
             ctx.fillStyle = '#fff';
             ctx.beginPath();
             ctx.arc(0, 0, 5, 0, Math.PI * 2);
             ctx.fill();
             
-            ctx.restore(); 
+            ctx.restore(); // 【重要】先解除旋轉狀態，再畫滑鼠的拖曳線
+
+            // 【新增】繪製虛擬橡皮筋與抓取點
+            if (isDragging) {
+                // 計算抓取點在螢幕上的位置
+                const grabScreenX = cartScreenX + (dragHitDist * scale) * Math.sin(theta);
+                const grabScreenY = screenY - (dragHitDist * scale) * Math.cos(theta);
+
+                // 畫虛線 (橡皮筋)
+                ctx.strokeStyle = 'rgba(255, 235, 59, 0.8)';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([8, 8]); // 設定虛線樣式
+                ctx.beginPath();
+                ctx.moveTo(grabScreenX, grabScreenY);
+                ctx.lineTo(mouseX, mouseY);
+                ctx.stroke();
+                ctx.setLineDash([]); // 恢復實線樣式以免影響其他繪圖
+
+                // 在抓取點畫一個發光的小圓球
+                ctx.fillStyle = '#FFEB3B';
+                ctx.beginPath();
+                ctx.arc(grabScreenX, grabScreenY, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
 
         function loop() {
             const dt = 1.0 / 60.0; 
-
-            if (isTouching) {
-                chargeRatio += 1.5 * dt; 
-                if (chargeRatio > 1.0) chargeRatio = 1.0; 
-            }
 
             let controlForce = (Kp_theta * theta) + 
                                (Kd_theta * theta_dot) + 
@@ -179,11 +210,15 @@
             requestAnimationFrame(loop);
         }
 
-        // --- 互動偵測 ---
-        canvas.addEventListener('mousedown', (e) => {
+        // --- 互動偵測 (新增 mousemove) ---
+        function updateMousePos(e) {
             const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left; 
-            const mouseY = e.clientY - rect.top; 
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            updateMousePos(e);
 
             const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
             const cartScreenY = 400;
@@ -195,21 +230,18 @@
             const local_y = -dx * Math.sin(theta) + dy * Math.cos(theta);
 
             if (local_y <= 0 && local_y >= -polePixelLength && local_x >= -15 && local_x <= 15) {
-                isTouching = true;
-                chargeRatio = 0.0; 
-                touchHitDist = Math.abs(local_y) / scale; 
-                touchSide = local_x < 0 ? 1 : -1;
+                isDragging = true;
+                dragHitDist = Math.abs(local_y) / scale; 
             }
         });
 
+        // 當滑鼠移動時，隨時更新座標
+        canvas.addEventListener('mousemove', (e) => {
+            updateMousePos(e);
+        });
+
         window.addEventListener('mouseup', () => {
-            if (isTouching) {
-                const maxKick = 5.0; 
-                const impulse = touchSide * chargeRatio * touchHitDist * maxKick;
-                theta_dot += impulse;
-                isTouching = false;
-                chargeRatio = 0.0;
-            }
+            isDragging = false;
         });
 
         requestAnimationFrame(loop);
