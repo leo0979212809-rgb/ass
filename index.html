@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>2D 倒立擺 PID 控制模擬 (HTML5 + JS)</title>
+    <style>
+        /* 簡單的 CSS 讓畫面置中並看起來有質感 */
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #222;
+            color: #eee;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            background-color: #333;
+            border: 2px solid #555;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        .instructions {
+            margin-top: 15px;
+            font-size: 1.1rem;
+            color: #aaa;
+        }
+        .highlight { color: #4CAF50; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h2>倒立擺 (Cart-Pole) PID 控制模擬</h2>
+    <canvas id="simCanvas" width="800" height="400"></canvas>
+    <div class="instructions">
+        用滑鼠點擊小車的 <span class="highlight">左側</span> 或 <span class="highlight">右側</span> 來施加外力推動擺桿！
+    </div>
+
+    <script>
+        // --- 1. 初始化畫布與環境 ---
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 物理常數設定
+        const gravity = 9.81;
+        const M = 1.0;   // 小車質量 (kg)
+        const m = 0.1;   // 擺桿質量 (kg)
+        const l = 0.5;   // 擺桿質心到旋轉軸的距離 (半長度)
+
+        // 系統狀態變數
+        let x = 0.0;          // 小車位置 (公尺)
+        let x_dot = 0.0;      // 小車速度
+        let theta = 0.05;     // 擺桿角度 (給一個微小的初始傾角讓他有點挑戰)
+        let theta_dot = 0.0;  // 擺桿角速度
+
+        // PID 控制器參數
+        const Kp_theta = 150.0;
+        const Kd_theta = 30.0;
+        const Kp_x = 5.0;
+        const Kd_x = 8.0;
+
+        // --- 2. 物理引擎核心 (半隱式歐拉積分) ---
+        function physicsStep(dt, force) {
+            const totalMass = M + m;
+            const ml = m * l;
+            
+            // 預先計算三角函數
+            const sinTheta = Math.sin(theta);
+            const cosTheta = Math.cos(theta);
+
+            // 倒立擺運動方程式
+            const temp = (force + ml * theta_dot * theta_dot * sinTheta) / totalMass;
+            const theta_acc = (gravity * sinTheta - cosTheta * temp) / 
+                              (l * (4.0 / 3.0 - (m * cosTheta * cosTheta) / totalMass));
+            const x_acc = temp - (ml * theta_acc * cosTheta) / totalMass;
+
+            // 積分更新
+            x_dot += x_acc * dt;
+            theta_dot += theta_acc * dt;
+            x += x_dot * dt;
+            theta += theta_dot * dt;
+        }
+
+        // --- 3. 渲染與繪圖邏輯 ---
+        function draw() {
+            // 清空畫布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 比例尺：1 公尺 = 100 像素
+            const scale = 100; 
+            
+            // 將物理座標 (x=0在中心) 轉換為螢幕座標
+            const screenX = canvas.width / 2 + x * scale;
+            const screenY = 300; // 軌道的高度
+
+            // 繪製軌道
+            ctx.fillStyle = '#888';
+            ctx.fillRect(0, screenY, canvas.width, 4);
+
+            // 繪製小車
+            ctx.fillStyle = '#4CAF50';
+            // x, y, width, height (小車長 100px, 高 40px)
+            ctx.fillRect(screenX - 50, screenY - 20, 100, 40); 
+
+            // 繪製擺桿
+            ctx.save(); // 儲存當前畫布狀態
+            ctx.translate(screenX, screenY); // 將畫布原點移動到小車中心
+            ctx.rotate(theta); // 旋轉畫布 (這就是為什麼要用矩陣/三角函數轉換的原因)
+            
+            ctx.fillStyle = '#F44336';
+            // 擺桿總長 1m (100px)，寬度 10px。往上畫所以 y 是負的
+            ctx.fillRect(-5, -100, 10, 100); 
+            
+            // 畫一個小圓點當作關節軸心
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(0, 0, 4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.restore(); // 恢復畫布狀態，以免影響下一幀
+        }
+
+        // --- 4. 遊戲迴圈 (Game Loop) ---
+        function loop() {
+            // 固定時間步長 60 FPS，維持物理穩定性
+            const dt = 1.0 / 60.0; 
+
+            // PID 計算：依據當前狀態計算需要出多少力來挽救平衡
+            let force = (Kp_theta * theta) + 
+                        (Kd_theta * theta_dot) + 
+                        (Kp_x * x) + 
+                        (Kd_x * x_dot);
+
+            // 限制馬達推力，避免數值無限放大導致物理引擎崩潰
+            force = Math.max(-100, Math.min(100, force));
+
+            // 更新物理世界
+            physicsStep(dt, force);
+
+            // 畫在螢幕上
+            draw();
+
+            // 告訴瀏覽器準備畫下一幀
+            requestAnimationFrame(loop);
+        }
+
+        // --- 5. 互動：滑鼠點擊施加外力 ---
+        canvas.addEventListener('mousedown', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            // 取得滑鼠在畫布上的相對 X 座標
+            const mouseX = event.clientX - rect.left; 
+            const cartScreenX = canvas.width / 2 + x * 100;
+
+            // 判斷點擊位置在小車左邊還是右邊，給予瞬間的角速度干擾
+            if (mouseX < cartScreenX) {
+                theta_dot += 3.0; // 從左邊推
+            } else {
+                theta_dot -= 3.0; // 從右邊推
+            }
+        });
+
+        // 啟動模擬！
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>
