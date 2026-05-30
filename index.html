@@ -21,7 +21,7 @@
             border: 2px solid #555;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
             border-radius: 8px;
-            margin-top: 15px;
+            margin-top: 20px;
         }
         h1 {
             margin: 0;
@@ -29,47 +29,16 @@
             letter-spacing: 5px;
             color: #ddd;
         }
-        #modeBtn {
-            margin-top: 15px;
-            padding: 12px 24px;
-            font-size: 1rem;
-            border: none;
-            border-radius: 5px;
-            background: #4CAF50;
-            color: white;
-            cursor: pointer;
-            font-weight: bold;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            transition: background 0.3s;
-        }
-        #modeBtn:hover {
-            filter: brightness(1.1);
-        }
     </style>
 </head>
 <body>
 
     <h1>倒立擺</h1>
-    <button id="modeBtn">目前模式：允許掉落與自動起擺 (Swing-Up)</button>
     <canvas id="simCanvas" width="800" height="500"></canvas>
 
     <script>
         const canvas = document.getElementById('simCanvas');
         const ctx = canvas.getContext('2d');
-
-        // --- 控制模式狀態 ---
-        let allowSwingUp = true;
-        const modeBtn = document.getElementById('modeBtn');
-        modeBtn.addEventListener('click', () => {
-            allowSwingUp = !allowSwingUp;
-            if (allowSwingUp) {
-                modeBtn.innerText = "目前模式：允許掉落與自動起擺 (Swing-Up)";
-                modeBtn.style.background = "#4CAF50";
-            } else {
-                modeBtn.innerText = "目前模式：強制保持平衡 (嚴格 PID)";
-                modeBtn.style.background = "#F44336";
-            }
-        });
 
         // --- 物理常數與狀態 ---
         const gravity = 9.81;
@@ -84,7 +53,6 @@
         let theta = 0.05;     
         let theta_dot = 0.0;  
 
-        // PID 參數
         const Kp_theta = 300.0; 
         const Kd_theta = 60.0;
         const Kp_x = 3.0;  
@@ -95,6 +63,7 @@
         let touchHitDist = 0;      
         let touchSide = 1;         
         let chargeRatio = 0.0; 
+        
         let cameraX = 0.0; 
 
         // --- 物理引擎 ---
@@ -113,10 +82,6 @@
             theta_dot += theta_acc * dt;
             x += x_dot * dt;
             theta += theta_dot * dt;
-
-            // 【重要】將角度限制在 -PI 到 PI 之間，避免數學計算溢位
-            while (theta > Math.PI) theta -= 2 * Math.PI;
-            while (theta < -Math.PI) theta += 2 * Math.PI;
         }
 
         // --- 繪圖邏輯 ---
@@ -124,10 +89,13 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             cameraX += (x - cameraX) * 0.1;
+
             const screenCenter = canvas.width / 2;
             const screenY = 400; 
+
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
+            // 繪製軌道
             ctx.strokeStyle = '#555';
             ctx.lineWidth = 2;
             ctx.beginPath();
@@ -139,23 +107,27 @@
             const startMeter = Math.floor(cameraX - viewRadiusInMeters);
             const endMeter = Math.ceil(cameraX + viewRadiusInMeters);
 
-            // 【修改】將 X 軸文字改為純白色 #FFFFFF
-            ctx.fillStyle = '#FFFFFF';
-            ctx.strokeStyle = '#888';
+            // 繪製刻度與公尺數字 (已加回)
+            ctx.fillStyle = '#888';
             ctx.font = '14px Arial';
             ctx.textAlign = 'center';
             for (let i = startMeter; i <= endMeter; i++) {
                 const tickScreenX = screenCenter + (i - cameraX) * scale;
+                
                 ctx.beginPath();
                 ctx.moveTo(tickScreenX, screenY);
                 ctx.lineTo(tickScreenX, screenY + 10);
                 ctx.stroke();
+                
+                // 標示數字
                 ctx.fillText(i + 'm', tickScreenX, screenY + 25);
             }
 
+            // 繪製小車
             ctx.fillStyle = '#4CAF50';
             ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
 
+            // 繪製擺桿
             ctx.save(); 
             ctx.translate(cartScreenX, screenY); 
             ctx.rotate(theta); 
@@ -168,6 +140,7 @@
                 ctx.fillStyle = `rgb(255, ${255 - chargeRatio * 150}, 0)`;
                 const yPos = -touchHitDist * scale; 
                 const visualForceLen = chargeRatio * 60; 
+                
                 if (touchSide === 1) {
                     ctx.fillRect(-poleWidth/2 - visualForceLen, yPos - 3, visualForceLen, 6);
                 } else {
@@ -183,7 +156,6 @@
             ctx.restore(); 
         }
 
-        // --- 主迴圈與兩階段控制器 ---
         function loop() {
             const dt = 1.0 / 60.0; 
 
@@ -192,51 +164,12 @@
                 if (chargeRatio > 1.0) chargeRatio = 1.0; 
             }
 
-            let controlForce = 0;
-            
-            // 判斷棍子是否超出可挽救的範圍 (大約 23 度)
-            const isFalling = Math.abs(theta) > 0.4;
-
-            if (allowSwingUp && isFalling) {
-                // ==========================================
-                // 第一階段：起擺控制 (Energy-based Swing-Up)
-                // ==========================================
-                
-                // 計算系統目前的總機械能
-                const inertia = (4.0 / 3.0) * m * l * l; // 轉動慣量
-                const E_kinetic = 0.5 * inertia * theta_dot * theta_dot;
-                const E_potential = m * gravity * l * Math.cos(theta);
-                const E_total = E_kinetic + E_potential;
-                
-                // 目標能量 (直立靜止時的位能)
-                const E_target = m * gravity * l;
-
-                if (E_total < E_target) {
-                    // 能量不夠，計算該往哪邊推來產生「盪鞦韆」的效果
-                    let pumpDirection = theta_dot * Math.cos(theta);
-                    
-                    // 給一個微小的初始擾動，避免完全垂直朝下時卡死
-                    if (Math.abs(pumpDirection) < 0.01) pumpDirection = 0.01; 
-
-                    // 施加巨大的力道來甩動棍子
-                    controlForce = Math.sign(pumpDirection) * 120.0;
-                }
-                
-                // 在甩動的過程中，加一點點力量防止小車跑太遠
-                controlForce -= (5.0 * x + 10.0 * x_dot);
-
-            } else {
-                // ==========================================
-                // 第二階段：平衡控制 (Strict PID)
-                // ==========================================
-                controlForce = (Kp_theta * theta) + 
+            let controlForce = (Kp_theta * theta) + 
                                (Kd_theta * theta_dot) + 
                                (Kp_x * x) + 
                                (Kd_x * x_dot);
-            }
 
-            // 安全機制：馬達推力上限
-            controlForce = Math.max(-180, Math.min(180, controlForce));
+            controlForce = Math.max(-150, Math.min(150, controlForce));
 
             physicsStep(dt, controlForce);
             draw();
@@ -268,6 +201,7 @@
 
         window.addEventListener('mouseup', () => {
             if (isTouching) {
+                // 【修改】推力基數調回 5.0，讓彈擊感更明顯
                 const maxKick = 5.0; 
                 const impulse = touchSide * chargeRatio * touchHitDist * maxKick;
                 theta_dot += impulse;
