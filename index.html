@@ -63,13 +63,16 @@
         const prison = { x: 20, y: 20, w: 200, h: 100, isBroken: false };
         let shards = []; 
 
+        // --- 怪物狀態 (新增攻擊計時與冷卻) ---
         let monster = {
             x: 0, y: 0, 
             vx: 0, vy: 0,  
             w: 150, h: 48, 
             state: 4,      
             timer: 15.0,   
-            offsetX: 0, offsetY: 0
+            offsetX: 0, offsetY: 0,
+            attackTimer: 5.0,     // 準備下一次攻擊的倒數計時
+            attackCooldown: 0.0   // 撞擊後的絕對冷卻時間 (秒)
         };
 
         const getScreenY = () => canvas.height - 150;
@@ -120,13 +123,17 @@
             const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
             const screenY = getScreenY();
 
+            // 處理攻擊冷卻時間
+            if (monster.attackCooldown > 0) {
+                monster.attackCooldown -= dt;
+            }
+
             if (monster.state === 4) { 
                 monster.x = prison.x + (prison.w - monster.w) / 2;
                 monster.y = prison.y + (prison.h - monster.h) / 2 + 5; 
                 monster.timer -= dt;
 
                 if (monster.timer <= 0) {
-                    // 【修改】第一次破壞偽裝時，必定觸發突襲 (狀態 1)
                     monster.state = 1; 
                     prison.isBroken = true;
                     createShatterEffect();
@@ -144,7 +151,11 @@
                 monster.y += monster.vy;
                 bounceMonster({x:0, y:0, w:canvas.width, h:canvas.height});
 
-                if (Math.random() < 0.005) monster.state = 1; 
+                // 【修改】平均 5 秒發動一次攻擊 (隨機區間 2 ~ 8 秒)
+                monster.attackTimer -= dt;
+                if (monster.attackTimer <= 0 && monster.attackCooldown <= 0) {
+                    monster.state = 1; 
+                }
             } 
             else if (monster.state === 1) { 
                 const targetX = cartScreenX + (polePixelLength / 2) * Math.sin(theta);
@@ -161,13 +172,18 @@
                 monster.x += monster.vx;
                 monster.y += monster.vy;
 
-                if (dist < 50) {
+                // 【修改】撞擊判定加入 1 秒冷卻防護
+                if (dist < 50 && monster.attackCooldown <= 0) {
                     const hitForce = monster.vx > 0 ? 8 : -8;
                     theta_dot += hitForce; 
                     
                     monster.vx = -monster.vx * 0.5;
                     monster.vy = -monster.vy * 0.5;
                     monster.state = 0; 
+                    
+                    // 設定冷卻與下一次攻擊倒數 (2到8秒，平均5秒)
+                    monster.attackCooldown = 1.0;
+                    monster.attackTimer = 2.0 + Math.random() * 6.0; 
                 }
             }
             else if (monster.state === 2) { 
@@ -179,7 +195,6 @@
             else if (monster.state === 3) { 
                 monster.timer -= dt; 
                 if (monster.timer <= 0) {
-                    // 【修改】之後每次從結界逃脫時，也必定觸發突襲 (狀態 1)
                     monster.state = 1; 
                 } else {
                     monster.vx += (Math.random() - 0.5) * 4;
@@ -396,6 +411,8 @@
                 } else {
                     monster.state = 0; 
                     monster.vx = 0; monster.vy = 0; 
+                    // 【新增】如果是直接放走，重新設定 5 秒計時
+                    monster.attackTimer = 2.0 + Math.random() * 6.0; 
                 }
             }
 
