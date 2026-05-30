@@ -95,7 +95,7 @@
 
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
-            // 繪製軌道與純刻度 (移除文字)
+            // 繪製軌道
             ctx.strokeStyle = '#555';
             ctx.lineWidth = 2;
             ctx.beginPath();
@@ -107,14 +107,20 @@
             const startMeter = Math.floor(cameraX - viewRadiusInMeters);
             const endMeter = Math.ceil(cameraX + viewRadiusInMeters);
 
+            // 繪製刻度與公尺數字 (已加回)
+            ctx.fillStyle = '#888';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
             for (let i = startMeter; i <= endMeter; i++) {
                 const tickScreenX = screenCenter + (i - cameraX) * scale;
                 
-                // 畫小短線 (刻度)，但不標示數字
                 ctx.beginPath();
                 ctx.moveTo(tickScreenX, screenY);
                 ctx.lineTo(tickScreenX, screenY + 10);
                 ctx.stroke();
+                
+                // 標示數字
+                ctx.fillText(i + 'm', tickScreenX, screenY + 25);
             }
 
             // 繪製小車
@@ -195,7 +201,8 @@
 
         window.addEventListener('mouseup', () => {
             if (isTouching) {
-                const maxKick = 2.5; 
+                // 【修改】推力基數調回 5.0，讓彈擊感更明顯
+                const maxKick = 5.0; 
                 const impulse = touchSide * chargeRatio * touchHitDist * maxKick;
                 theta_dot += impulse;
                 isTouching = false;
