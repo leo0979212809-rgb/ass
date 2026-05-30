@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>2D 倒立擺 - 鏡頭跟隨與無限地圖</title>
+    <title>倒立擺</title>
     <style>
         body {
             display: flex;
@@ -21,25 +21,20 @@
             border: 2px solid #555;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
             border-radius: 8px;
+            margin-top: 20px;
         }
-        .instructions {
-            margin-top: 15px;
-            font-size: 1.1rem;
-            color: #aaa;
-            text-align: center;
-            line-height: 1.5;
+        h1 {
+            margin: 0;
+            font-size: 2rem;
+            letter-spacing: 5px;
+            color: #ddd;
         }
-        .highlight { color: #4CAF50; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <h2>倒立擺 (Cart-Pole) 鏡頭跟隨版</h2>
+    <h1>倒立擺</h1>
     <canvas id="simCanvas" width="800" height="500"></canvas>
-    <div class="instructions">
-        點擊並長按棍子蓄力，放開給予彈擊。<br>
-        小車現在可以<span class="highlight">無限往外跑</span>，鏡頭會自動平滑跟隨！
-    </div>
 
     <script>
         const canvas = document.getElementById('simCanvas');
@@ -50,7 +45,7 @@
         const M = 1.0;   
         const m = 0.2;   
         const l = 1.0;   
-        const scale = 100; // 1公尺 = 100像素
+        const scale = 100; 
         const polePixelLength = l * 2 * scale; 
 
         let x = 0.0;          
@@ -58,10 +53,9 @@
         let theta = 0.05;     
         let theta_dot = 0.0;  
 
-        // PID 參數：因為沒有邊界了，稍微降低對 X 軸的執著，讓他跑遠一點再拉回來會比較自然
         const Kp_theta = 300.0; 
         const Kd_theta = 60.0;
-        const Kp_x = 3.0;  // 【調弱】讓小車可以離開中心遠一點
+        const Kp_x = 3.0;  
         const Kd_x = 8.0;
 
         // --- 互動與鏡頭變數 ---
@@ -70,7 +64,6 @@
         let touchSide = 1;         
         let chargeRatio = 0.0; 
         
-        // 【新增】攝影機的 X 座標
         let cameraX = 0.0; 
 
         // --- 物理引擎 ---
@@ -89,26 +82,20 @@
             theta_dot += theta_acc * dt;
             x += x_dot * dt;
             theta += theta_dot * dt;
-            
-            // 【移除】移除了撞牆限制，現在宇宙是無限的！
         }
 
         // --- 繪圖邏輯 ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 【新增】平滑鏡頭跟隨 (Lerp)
-            // 攝影機每一幀向小車位置靠近 10%，產生電影般的跟隨延遲感
             cameraX += (x - cameraX) * 0.1;
 
-            // 螢幕中心點基準
             const screenCenter = canvas.width / 2;
             const screenY = 400; 
 
-            // 計算小車在螢幕上的實際 X 座標 (將物理座標減去鏡頭座標)
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
-            // --- 繪製無限軌道與 X 軸座標 ---
+            // 繪製軌道與純刻度 (移除文字)
             ctx.strokeStyle = '#555';
             ctx.lineWidth = 2;
             ctx.beginPath();
@@ -116,34 +103,25 @@
             ctx.lineTo(canvas.width, screenY);
             ctx.stroke();
 
-            // 動態計算當前畫面涵蓋的公尺範圍 (例如從 -4m 到 +4m)
             const viewRadiusInMeters = (canvas.width / 2) / scale;
             const startMeter = Math.floor(cameraX - viewRadiusInMeters);
             const endMeter = Math.ceil(cameraX + viewRadiusInMeters);
 
-            // 畫出 X 軸的刻度與數字
-            ctx.fillStyle = '#888';
-            ctx.font = '14px Arial';
-            ctx.textAlign = 'center';
             for (let i = startMeter; i <= endMeter; i++) {
-                // 將這個公尺刻度轉換成螢幕座標
                 const tickScreenX = screenCenter + (i - cameraX) * scale;
                 
-                // 畫小短線 (刻度)
+                // 畫小短線 (刻度)，但不標示數字
                 ctx.beginPath();
                 ctx.moveTo(tickScreenX, screenY);
                 ctx.lineTo(tickScreenX, screenY + 10);
                 ctx.stroke();
-                
-                // 標示數字 (加上 "m" 單位)
-                ctx.fillText(i + 'm', tickScreenX, screenY + 25);
             }
 
-            // --- 繪製小車 ---
+            // 繪製小車
             ctx.fillStyle = '#4CAF50';
             ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
 
-            // --- 繪製擺桿 ---
+            // 繪製擺桿
             ctx.save(); 
             ctx.translate(cartScreenX, screenY); 
             ctx.rotate(theta); 
@@ -152,7 +130,6 @@
             const poleWidth = 14; 
             ctx.fillRect(-poleWidth/2, -polePixelLength, poleWidth, polePixelLength); 
             
-            // 蓄力視覺指示器
             if (isTouching) {
                 ctx.fillStyle = `rgb(255, ${255 - chargeRatio * 150}, 0)`;
                 const yPos = -touchHitDist * scale; 
@@ -181,7 +158,6 @@
                 if (chargeRatio > 1.0) chargeRatio = 1.0; 
             }
 
-            // PID 控制力計算
             let controlForce = (Kp_theta * theta) + 
                                (Kd_theta * theta_dot) + 
                                (Kp_x * x) + 
@@ -194,13 +170,12 @@
             requestAnimationFrame(loop);
         }
 
-        // --- 互動偵測 (考量鏡頭偏移) ---
+        // --- 互動偵測 ---
         canvas.addEventListener('mousedown', (e) => {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left; 
             const mouseY = e.clientY - rect.top; 
 
-            // 【重要】現在小車的螢幕位置必須把鏡頭 (cameraX) 考慮進去
             const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
             const cartScreenY = 400;
             
