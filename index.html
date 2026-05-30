@@ -60,16 +60,15 @@
 
         // 結界範圍與狀態
         const prison = { x: 20, y: 20, w: 200, h: 100, isBroken: false };
-        let shards = []; // 儲存破碎動畫的碎片
+        let shards = []; 
 
         // --- 怪物狀態 ---
         let monster = {
             x: 0, y: 0, 
             vx: 0, vy: 0,  
             w: 150, h: 48, 
-            // 4 代表「完美偽裝的初次收容狀態」
             state: 4,      
-            timer: 15.0,   // 第一次 15 秒後爆發
+            timer: 15.0,   
             offsetX: 0, offsetY: 0
         };
 
@@ -104,7 +103,6 @@
                 shards.push({
                     x: prison.x + Math.random() * prison.w,
                     y: prison.y + Math.random() * prison.h,
-                    // 讓碎片帶有向外爆發的衝力
                     vx: (Math.random() - 0.5) * 15,
                     vy: (Math.random() - 0.5) * 15 - 5, 
                     size: Math.random() * 15 + 8,
@@ -123,14 +121,12 @@
             const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
             const screenY = 400;
 
-            if (monster.state === 4) { // 【狀態4：偽裝潛伏期】
-                // 完全靜止不動，精準置中於結界內
+            if (monster.state === 4) { 
                 monster.x = prison.x + (prison.w - monster.w) / 2;
                 monster.y = prison.y + (prison.h - monster.h) / 2 + 5; 
                 monster.timer -= dt;
 
                 if (monster.timer <= 0) {
-                    // 偽裝解除，炸裂脫逃！
                     monster.state = 0; 
                     monster.vx = 10; 
                     monster.vy = 8;
@@ -138,7 +134,7 @@
                     createShatterEffect();
                 }
             }
-            else if (monster.state === 0) { // 狀態0：亂飄
+            else if (monster.state === 0) { 
                 if (Math.random() < 0.05) {
                     monster.vx += (Math.random() - 0.5);
                     monster.vy += (Math.random() - 0.5);
@@ -152,7 +148,7 @@
 
                 if (Math.random() < 0.005) monster.state = 1; 
             } 
-            else if (monster.state === 1) { // 狀態1：突襲
+            else if (monster.state === 1) { 
                 const targetX = cartScreenX + (polePixelLength / 2) * Math.sin(theta);
                 const targetY = screenY - (polePixelLength / 2) * Math.cos(theta);
                 
@@ -176,13 +172,13 @@
                     monster.state = 0; 
                 }
             }
-            else if (monster.state === 2) { // 狀態2：被玩家抓著 (掙扎)
+            else if (monster.state === 2) { 
                 const struggleX = (Math.random() - 0.5) * 15;
                 const struggleY = (Math.random() - 0.5) * 15;
                 monster.x = currentMouseX - monster.offsetX + struggleX;
                 monster.y = currentMouseY - monster.offsetY + struggleY;
             }
-            else if (monster.state === 3) { // 狀態3：關在結界裡 (後續收容)
+            else if (monster.state === 3) { 
                 monster.timer -= dt; 
                 if (monster.timer <= 0) {
                     monster.state = 0; 
@@ -220,23 +216,16 @@
                 ctx.fillRect(prison.x, prison.y, prison.w, prison.h);
                 ctx.strokeRect(prison.x, prison.y, prison.w, prison.h);
             } else {
-                // 炸裂後：顯露出真實的紅色虛線封印結界
-                ctx.strokeStyle = '#FF5722'; 
+                // 炸裂後：顯露出神秘的無字白色虛線結界
+                ctx.strokeStyle = '#FFFFFF'; 
                 ctx.lineWidth = 2;
                 ctx.setLineDash([10, 5]); 
                 ctx.strokeRect(prison.x, prison.y, prison.w, prison.h);
                 ctx.setLineDash([]);
                 
-                ctx.fillStyle = 'rgba(255, 87, 34, 0.15)';
+                // 加上非常淡的白色半透明背景，讓玩家知道這是一個區域
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
                 ctx.fillRect(prison.x, prison.y, prison.w, prison.h);
-
-                // 只有結界顯現後才會有提示文字
-                ctx.fillStyle = '#FF5722';
-                ctx.font = 'bold 16px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                let prisonText = monster.state === 3 ? `封印中...剩餘 ${Math.ceil(monster.timer)} 秒` : "把字拖進來封印";
-                ctx.fillText(prisonText, prison.x + prison.w/2, prison.y + 20);
             }
 
             // --- 繪製軌道與刻度 ---
@@ -286,16 +275,16 @@
                 let s = shards[i];
                 s.x += s.vx;
                 s.y += s.vy;
-                s.vy += 0.3; // 碎片受重力下墜
+                s.vy += 0.3; 
                 s.rot += s.rotV;
-                s.alpha -= 0.015; // 逐漸淡出
+                s.alpha -= 0.015; 
 
                 ctx.save();
                 ctx.translate(s.x, s.y);
                 ctx.rotate(s.rot);
                 ctx.globalAlpha = Math.max(0, s.alpha);
-                ctx.fillStyle = '#000000'; // 黑底碎片
-                ctx.strokeStyle = '#FFFFFF'; // 白框碎片
+                ctx.fillStyle = '#000000'; 
+                ctx.strokeStyle = '#FFFFFF'; 
                 ctx.lineWidth = 2;
                 ctx.fillRect(-s.size/2, -s.size/2, s.size, s.size);
                 ctx.strokeRect(-s.size/2, -s.size/2, s.size, s.size);
@@ -309,10 +298,10 @@
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             
-            if (monster.state === 4) ctx.fillStyle = '#FFFFFF'; // 偽裝期：乖巧的純白色
+            if (monster.state === 4) ctx.fillStyle = '#FFFFFF'; 
             else if (monster.state === 1) ctx.fillStyle = '#F44336'; 
             else if (monster.state === 2) ctx.fillStyle = '#FFC107'; 
-            else if (monster.state === 3) ctx.fillStyle = 'rgba(255, 87, 34, 0.7)'; 
+            else if (monster.state === 3) ctx.fillStyle = 'rgba(255, 87, 34, 0.7)'; // 關押中依舊維持警戒的橘紅掙扎
             else ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; 
             
             ctx.fillText("倒立擺", monster.x, monster.y);
@@ -380,17 +369,15 @@
             currentMouseX = mouseX;
             currentMouseY = mouseY;
 
-            // 1. 檢查是否抓取怪物文字 (新增防呆：如果在偽裝期 state 4，禁止抓取！)
             if (monster.state !== 4 && 
                 mouseX >= monster.x && mouseX <= monster.x + monster.w && 
                 mouseY >= monster.y && mouseY <= monster.y + monster.h) {
-                monster.state = 2; // 被抓取
+                monster.state = 2; 
                 monster.offsetX = mouseX - monster.x;
                 monster.offsetY = mouseY - monster.y;
                 return;
             }
 
-            // 2. 檢查拉彈弓
             const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
             const cartScreenY = 400;
             const dx = mouseX - cartScreenX;
@@ -419,7 +406,6 @@
                 if (centerMX > prison.x && centerMX < prison.x + prison.w && 
                     centerMY > prison.y && centerMY < prison.y + prison.h) {
                     monster.state = 3; 
-                    // 重新收容，隨機 10 ~ 15 秒脫逃
                     monster.timer = 10.0 + Math.random() * 5.0; 
                 } else {
                     monster.state = 0; 
