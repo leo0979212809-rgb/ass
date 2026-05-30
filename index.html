@@ -11,10 +11,10 @@
             color: #eee;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             user-select: none;
-            overflow: hidden; /* 防止出現捲軸 */
+            overflow: hidden; 
         }
         canvas {
-            display: block; /* 消除底部空白間隙 */
+            display: block; 
             background-color: #2b2b2b;
             cursor: crosshair; 
         }
@@ -34,7 +34,7 @@
             canvas.height = window.innerHeight;
         }
         window.addEventListener('resize', resizeCanvas);
-        resizeCanvas(); // 初始化先執行一次
+        resizeCanvas();
 
         // --- 物理常數與狀態 ---
         const gravity = 9.81;
@@ -60,11 +60,9 @@
         let currentMouseY = 0;        
         let cameraX = 0.0; 
 
-        // 結界範圍與狀態
         const prison = { x: 20, y: 20, w: 200, h: 100, isBroken: false };
         let shards = []; 
 
-        // --- 怪物狀態 ---
         let monster = {
             x: 0, y: 0, 
             vx: 0, vy: 0,  
@@ -74,10 +72,8 @@
             offsetX: 0, offsetY: 0
         };
 
-        // 取得動態的地板高度 (距離視窗底部 150px)
         const getScreenY = () => canvas.height - 150;
 
-        // --- 物理引擎 ---
         function physicsStep(dt, force) {
             const totalMass = M + m;
             const ml = m * l;
@@ -130,9 +126,8 @@
                 monster.timer -= dt;
 
                 if (monster.timer <= 0) {
-                    monster.state = 0; 
-                    monster.vx = 10; 
-                    monster.vy = 8;
+                    // 【修改】第一次破壞偽裝時，必定觸發突襲 (狀態 1)
+                    monster.state = 1; 
                     prison.isBroken = true;
                     createShatterEffect();
                 }
@@ -184,9 +179,8 @@
             else if (monster.state === 3) { 
                 monster.timer -= dt; 
                 if (monster.timer <= 0) {
-                    monster.state = 0; 
-                    monster.vx = 10; 
-                    monster.vy = 8;
+                    // 【修改】之後每次從結界逃脫時，也必定觸發突襲 (狀態 1)
+                    monster.state = 1; 
                 } else {
                     monster.vx += (Math.random() - 0.5) * 4;
                     monster.vy += (Math.random() - 0.5) * 4;
@@ -208,7 +202,6 @@
             const screenY = getScreenY(); 
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
-            // --- 繪製結界與偽裝盒 ---
             if (!prison.isBroken) {
                 ctx.strokeStyle = '#FFFFFF'; 
                 ctx.lineWidth = 3;
@@ -227,7 +220,6 @@
                 ctx.fillRect(prison.x, prison.y, prison.w, prison.h);
             }
 
-            // --- 繪製軌道與刻度 ---
             ctx.strokeStyle = '#777'; 
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -251,7 +243,6 @@
                 ctx.fillText(i + 'm', tickScreenX, screenY + 30);
             }
 
-            // --- 繪製小車與擺桿 ---
             ctx.fillStyle = '#4CAF50';
             ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
 
@@ -269,7 +260,6 @@
             ctx.fill();
             ctx.restore(); 
 
-            // --- 繪製破碎動畫 ---
             for (let i = shards.length - 1; i >= 0; i--) {
                 let s = shards[i];
                 s.x += s.vx;
@@ -292,7 +282,6 @@
                 if (s.alpha <= 0) shards.splice(i, 1);
             }
 
-            // --- 繪製怪物文字 ---
             ctx.font = 'bold 48px "Segoe UI"';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
@@ -305,7 +294,6 @@
             
             ctx.fillText("倒立擺", monster.x, monster.y);
 
-            // --- 繪製憤怒鳥橡皮筋 ---
             if (isDragging) {
                 const grabScreenX = cartScreenX + (grabPointDist * scale) * Math.sin(theta);
                 const grabScreenY = screenY - (grabPointDist * scale) * Math.cos(theta);
@@ -359,7 +347,6 @@
             requestAnimationFrame(loop);
         }
 
-        // --- 互動偵測 ---
         canvas.addEventListener('mousedown', (e) => {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left; 
