@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>倒立擺</title>
+    <title>但姜陸柒亡</title>
     <style>
         body {
             display: flex;
@@ -22,7 +22,7 @@
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
             border-radius: 8px;
             margin-top: 20px;
-            cursor: crosshair; /* 滑鼠游標改成準星會更有瞄準的感覺 */
+            cursor: crosshair; 
         }
         h1 {
             margin: 0;
@@ -30,27 +30,20 @@
             letter-spacing: 5px;
             color: #ddd;
         }
-        .instructions {
-            margin-top: 15px;
-            font-size: 1.1rem;
-            color: #aaa;
-            text-align: center;
-            line-height: 1.5;
-        }
-        .highlight { color: #FFEB3B; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <h1>倒立擺</h1>
     <canvas id="simCanvas" width="800" height="500"></canvas>
-    <div class="instructions">
-        按住棍子並<span class="highlight">往反方向拉扯</span>，像憤怒鳥一樣放開彈擊！
-    </div>
 
     <script>
         const canvas = document.getElementById('simCanvas');
         const ctx = canvas.getContext('2d');
+
+        // --- 載入冰紅茶圖片 ---
+        const cartImg = new Image();
+        cartImg.src = 'tea.jpg'; // 確保圖片跟 HTML 檔在同一個資料夾
 
         // --- 物理常數與狀態 ---
         const gravity = 9.81;
@@ -71,10 +64,10 @@
         const Kd_x = 8.0;
 
         // --- 憤怒鳥互動 (彈弓) 變數 ---
-        let isDragging = false;       // 是否正在拉扯
-        let grabPointDist = 0;        // 抓取點距離軸心的長度 (力臂, 單位:公尺)
-        let currentMouseX = 0;        // 滑鼠當前 X 座標
-        let currentMouseY = 0;        // 滑鼠當前 Y 座標
+        let isDragging = false;       
+        let grabPointDist = 0;        
+        let currentMouseX = 0;        
+        let currentMouseY = 0;        
         
         let cameraX = 0.0; 
 
@@ -134,9 +127,19 @@
                 ctx.fillText(i + 'm', tickScreenX, screenY + 30);
             }
 
-            // 繪製小車
-            ctx.fillStyle = '#4CAF50';
-            ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
+            // --- 繪製冰紅茶 (取代原本的小車) ---
+            if (cartImg.complete && cartImg.naturalHeight !== 0) {
+                ctx.save();
+                ctx.translate(cartScreenX, screenY);
+                ctx.rotate(Math.PI / 2); // 將直立的圖片旋轉 90 度變成橫的
+                // 調整繪製尺寸：原本車子是 100x40，這裡設定為長 120，粗 50 讓比例好看一點
+                ctx.drawImage(cartImg, -25, -60, 50, 120); 
+                ctx.restore();
+            } else {
+                // 如果圖片還沒讀取成功，或是找不到圖片，先畫原本的綠色方塊當備用
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
+            }
 
             // 繪製擺桿
             ctx.save(); 
@@ -156,12 +159,9 @@
 
             // --- 繪製憤怒鳥橡皮筋 ---
             if (isDragging) {
-                // 1. 計算「抓取點」在目前螢幕上的實際座標 (因為車子和棍子可能正在動)
-                // 使用旋轉矩陣將局部座標 (沿著棍子的距離) 轉回螢幕全域座標
                 const grabScreenX = cartScreenX + (grabPointDist * scale) * Math.sin(theta);
                 const grabScreenY = screenY - (grabPointDist * scale) * Math.cos(theta);
 
-                // 2. 限制拉扯的最長視覺距離 (最大 200px)
                 let dx = currentMouseX - grabScreenX;
                 let dy = currentMouseY - grabScreenY;
                 const pullDist = Math.hypot(dx, dy);
@@ -170,27 +170,23 @@
                 let drawMouseX = currentMouseX;
                 let drawMouseY = currentMouseY;
                 
-                // 如果拉超過極限，把滑鼠視覺位置鎖在最大圓周上
                 if (pullDist > maxVisualPull) {
                     drawMouseX = grabScreenX + (dx / pullDist) * maxVisualPull;
                     drawMouseY = grabScreenY + (dy / pullDist) * maxVisualPull;
                 }
 
-                // 3. 畫橡皮筋 (從抓取點連到滑鼠)
-                ctx.strokeStyle = '#FFEB3B'; // 黃色橡皮筋
+                ctx.strokeStyle = '#FFEB3B'; 
                 ctx.lineWidth = 4;
                 ctx.beginPath();
                 ctx.moveTo(grabScreenX, grabScreenY);
                 ctx.lineTo(drawMouseX, drawMouseY);
                 ctx.stroke();
 
-                // 畫滑鼠端的「捏點」
                 ctx.fillStyle = '#FFF';
                 ctx.beginPath();
                 ctx.arc(drawMouseX, drawMouseY, 8, 0, Math.PI * 2);
                 ctx.fill();
                 
-                // 畫綁在棍子上的「錨點」
                 ctx.fillStyle = '#FF9800';
                 ctx.beginPath();
                 ctx.arc(grabScreenX, grabScreenY, 6, 0, Math.PI * 2);
@@ -228,16 +224,15 @@
             const local_x = dx * Math.cos(theta) + dy * Math.sin(theta);
             const local_y = -dx * Math.sin(theta) + dy * Math.cos(theta);
 
-            // 判斷是否點中棍子
-            if (local_y <= 0 && local_y >= -polePixelLength && local_x >= -15 && local_x <= 15) {
+            if (local_y <= 20 && local_y >= -(polePixelLength + 20) && local_x >= -40 && local_x <= 40) {
                 isDragging = true;
-                grabPointDist = Math.abs(local_y) / scale; // 記住抓在棍子的多高處
+                let bounded_local_y = Math.min(0, Math.max(-polePixelLength, local_y));
+                grabPointDist = Math.abs(bounded_local_y) / scale; 
                 currentMouseX = mouseX;
                 currentMouseY = mouseY;
             }
         });
 
-        // 監聽 window 的移動，即使滑鼠拉出畫布外也能保持追蹤
         window.addEventListener('mousemove', (e) => {
             if (isDragging) {
                 const rect = canvas.getBoundingClientRect();
@@ -251,15 +246,12 @@
                 const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
                 const cartScreenY = 400;
 
-                // 算釋放瞬間的抓取點螢幕座標
                 const grabScreenX = cartScreenX + (grabPointDist * scale) * Math.sin(theta);
                 const grabScreenY = cartScreenY - (grabPointDist * scale) * Math.cos(theta);
 
-                // 計算向量 (抓取點 - 滑鼠點)，這就是憤怒鳥「反方向發射」的力道向量
                 let pullX = grabScreenX - currentMouseX;
                 let pullY = grabScreenY - currentMouseY;
 
-                // 限制最大拉力 (防止滑鼠拉太遠物理爆炸)
                 const maxPull = 200;
                 let pullDist = Math.hypot(pullX, pullY);
                 if (pullDist > maxPull) {
@@ -267,14 +259,11 @@
                     pullY = (pullY / pullDist) * maxPull;
                 }
 
-                // 透過局部空間轉換，提取出「垂直於棍子方向」的橫向力 (才會產生力矩)
                 const pullLocalX = pullX * Math.cos(theta) + pullY * Math.sin(theta);
-
-                // 衝量 = 橫向力道 * 力臂長度 * 力道轉換常數
-                const pullMultiplier = 0.015; // 這個常數決定了橡皮筋的威力
+                const pullMultiplier = 0.015; 
                 const impulse = pullLocalX * grabPointDist * pullMultiplier;
                 
-                theta_dot += impulse; // 瞬間打擊
+                theta_dot += impulse; 
                 isDragging = false;
             }
         });
