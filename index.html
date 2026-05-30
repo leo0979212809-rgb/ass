@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>6767676767676767676767676767676767676767676767676767</title>
+    <title>67676767676767676767676767676767676767</title>
     <style>
         body {
             display: flex;
@@ -15,26 +15,19 @@
             color: #eee;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             user-select: none;
+            overflow: hidden;
         }
         canvas {
             background-color: #2b2b2b;
             border: 2px solid #555;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
             border-radius: 8px;
-            margin-top: 20px;
             cursor: crosshair; 
-        }
-        h1 {
-            margin: 0;
-            font-size: 2rem;
-            letter-spacing: 5px;
-            color: #ddd;
         }
     </style>
 </head>
 <body>
 
-    <h1>倒立擺</h1>
     <canvas id="simCanvas" width="800" height="500"></canvas>
 
     <script>
@@ -67,6 +60,18 @@
         
         let cameraX = 0.0; 
 
+        // --- 【新增】野生標題怪物變數 ---
+        let monster = {
+            x: 600, y: 100, 
+            vx: -2, vy: 2,
+            w: 150, h: 48, // 文字大約的寬高
+            state: 0,      // 0: 亂飄, 1: 突襲, 2: 被玩家抓著, 3: 關在結界裡
+            timer: 0,      // 結界倒數計時器
+            offsetX: 0, offsetY: 0
+        };
+        // 結界範圍 (左上角)
+        const prison = { x: 20, y: 20, w: 200, h: 100 };
+
         // --- 物理引擎 ---
         function physicsStep(dt, force) {
             const totalMass = M + m;
@@ -85,6 +90,96 @@
             theta += theta_dot * dt;
         }
 
+        // --- 邊界反彈輔助函式 ---
+        function bounceMonster(bounds) {
+            if (monster.x < bounds.x) { monster.x = bounds.x; monster.vx *= -1; }
+            if (monster.x + monster.w > bounds.x + bounds.w) { monster.x = bounds.x + bounds.w - monster.w; monster.vx *= -1; }
+            if (monster.y < bounds.y) { monster.y = bounds.y; monster.vy *= -1; }
+            if (monster.y + monster.h > bounds.y + bounds.h) { monster.y = bounds.y + bounds.h - monster.h; monster.vy *= -1; }
+        }
+
+        // --- 怪物文字邏輯更新 ---
+        function updateMonster(dt) {
+            // 文字動態寬度測量
+            ctx.font = 'bold 48px "Segoe UI"';
+            monster.w = ctx.measureText("倒立擺").width;
+
+            const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
+            const screenY = 400;
+
+            if (monster.state === 0) { // 【狀態0：亂飄】
+                if (Math.random() < 0.05) {
+                    monster.vx += (Math.random() - 0.5);
+                    monster.vy += (Math.random() - 0.5);
+                }
+                // 限速
+                const speed = Math.hypot(monster.vx, monster.vy);
+                if (speed > 2) { monster.vx = (monster.vx/speed)*2; monster.vy = (monster.vy/speed)*2; }
+                
+                monster.x += monster.vx;
+                monster.y += monster.vy;
+                bounceMonster({x:0, y:0, w:canvas.width, h:canvas.height});
+
+                // 有 0.5% 的機率發動突襲！
+                if (Math.random() < 0.005) {
+                    monster.state = 1;
+                }
+            } 
+            else if (monster.state === 1) { // 【狀態1：突襲】
+                // 瞄準棍子的中心點
+                const targetX = cartScreenX + (polePixelLength / 2) * Math.sin(theta);
+                const targetY = screenY - (polePixelLength / 2) * Math.cos(theta);
+                
+                const dx = targetX - (monster.x + monster.w/2);
+                const dy = targetY - (monster.y + monster.h/2);
+                const dist = Math.hypot(dx, dy);
+
+                // 加速衝刺
+                if (dist > 0) {
+                    monster.vx = (dx / dist) * 12;
+                    monster.vy = (dy / dist) * 12;
+                }
+                monster.x += monster.vx;
+                monster.y += monster.vy;
+
+                // 碰撞判定 (如果怪物中心點跟棍子距離小於 50)
+                if (dist < 50) {
+                    // 給予強大打擊力道！
+                    const hitForce = monster.vx > 0 ? 8 : -8;
+                    theta_dot += hitForce; 
+                    
+                    // 撞完反彈並恢復亂飄
+                    monster.vx = -monster.vx * 0.5;
+                    monster.vy = -monster.vy * 0.5;
+                    monster.state = 0; 
+                }
+            }
+            else if (monster.state === 2) { // 【狀態2：被玩家抓著】
+                // 座標跟隨滑鼠
+                monster.x = currentMouseX - monster.offsetX;
+                monster.y = currentMouseY - monster.offsetY;
+            }
+            else if (monster.state === 3) { // 【狀態3：關在結界裡】
+                monster.timer -= dt; // 倒數計時
+                if (monster.timer <= 0) {
+                    // 時間到！爆發逃脫！
+                    monster.state = 0; 
+                    monster.vx = 8; 
+                    monster.vy = 5;
+                } else {
+                    // 在牢籠裡瘋狂亂撞掙扎
+                    monster.vx += (Math.random() - 0.5) * 4;
+                    monster.vy += (Math.random() - 0.5) * 4;
+                    const speed = Math.hypot(monster.vx, monster.vy);
+                    if (speed > 5) { monster.vx = (monster.vx/speed)*5; monster.vy = (monster.vy/speed)*5; }
+                    
+                    monster.x += monster.vx;
+                    monster.y += monster.vy;
+                    bounceMonster(prison);
+                }
+            }
+        }
+
         // --- 繪圖邏輯 ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -93,10 +188,26 @@
 
             const screenCenter = canvas.width / 2;
             const screenY = 400; 
-
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
-            // 繪製軌道
+            // --- 繪製封印結界 ---
+            ctx.strokeStyle = '#FF5722'; 
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 5]); 
+            ctx.strokeRect(prison.x, prison.y, prison.w, prison.h);
+            ctx.setLineDash([]);
+            
+            ctx.fillStyle = 'rgba(255, 87, 34, 0.15)';
+            ctx.fillRect(prison.x, prison.y, prison.w, prison.h);
+            
+            ctx.fillStyle = '#FF5722';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            let prisonText = monster.state === 3 ? `封印中...剩餘 ${Math.ceil(monster.timer)} 秒` : "把字拖進來封印";
+            ctx.fillText(prisonText, prison.x + prison.w/2, prison.y + 20);
+
+            // --- 繪製軌道與刻度 ---
             ctx.strokeStyle = '#777'; 
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -108,12 +219,8 @@
             const startMeter = Math.floor(cameraX - viewRadiusInMeters);
             const endMeter = Math.ceil(cameraX + viewRadiusInMeters);
 
-            // 繪製刻度
             ctx.fillStyle = '#FFFFFF'; 
-            ctx.strokeStyle = '#FFFFFF'; 
-            ctx.lineWidth = 2;
             ctx.font = 'bold 16px Arial'; 
-            ctx.textAlign = 'center';
             for (let i = startMeter; i <= endMeter; i++) {
                 const tickScreenX = screenCenter + (i - cameraX) * scale;
                 ctx.beginPath();
@@ -123,11 +230,10 @@
                 ctx.fillText(i + 'm', tickScreenX, screenY + 30);
             }
 
-            // 繪製小車
+            // --- 繪製小車與擺桿 ---
             ctx.fillStyle = '#4CAF50';
             ctx.fillRect(cartScreenX - 50, screenY - 20, 100, 40); 
 
-            // 繪製擺桿
             ctx.save(); 
             ctx.translate(cartScreenX, screenY); 
             ctx.rotate(theta); 
@@ -136,12 +242,24 @@
             const poleWidth = 14; 
             ctx.fillRect(-poleWidth/2, -polePixelLength, poleWidth, polePixelLength); 
             
-            // 軸心
             ctx.fillStyle = '#fff';
             ctx.beginPath();
             ctx.arc(0, 0, 5, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore(); 
+
+            // --- 繪製怪物文字 ---
+            ctx.font = 'bold 48px "Segoe UI"';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            
+            // 根據狀態改變文字顏色
+            if (monster.state === 1) ctx.fillStyle = '#F44336'; // 突襲：警戒紅
+            else if (monster.state === 2) ctx.fillStyle = '#FFC107'; // 抓取：黃色
+            else if (monster.state === 3) ctx.fillStyle = 'rgba(255, 87, 34, 0.7)'; // 牢籠：橘紅掙扎
+            else ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; // 亂飄：半透明白
+            
+            ctx.fillText("倒立擺", monster.x, monster.y);
 
             // --- 繪製憤怒鳥橡皮筋 ---
             if (isDragging) {
@@ -183,6 +301,9 @@
         function loop() {
             const dt = 1.0 / 60.0; 
 
+            // 更新文字怪物
+            updateMonster(dt);
+
             let controlForce = (Kp_theta * theta) + 
                                (Kd_theta * theta_dot) + 
                                (Kp_x * x) + 
@@ -200,40 +321,61 @@
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left; 
             const mouseY = e.clientY - rect.top; 
+            
+            currentMouseX = mouseX;
+            currentMouseY = mouseY;
 
+            // 1. 優先檢查是否點擊到了「倒立擺」文字
+            if (mouseX >= monster.x && mouseX <= monster.x + monster.w && 
+                mouseY >= monster.y && mouseY <= monster.y + monster.h) {
+                monster.state = 2; // 被抓取
+                monster.offsetX = mouseX - monster.x;
+                monster.offsetY = mouseY - monster.y;
+                return; // 如果抓到文字，就不觸發拉彈弓
+            }
+
+            // 2. 如果沒點到文字，檢查是否點到了棍子
             const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
             const cartScreenY = 400;
-            
             const dx = mouseX - cartScreenX;
             const dy = mouseY - cartScreenY;
-
             const local_x = dx * Math.cos(theta) + dy * Math.sin(theta);
             const local_y = -dx * Math.sin(theta) + dy * Math.cos(theta);
 
-            // 【修改】擴大感應範圍：X軸寬度放大到 -40 到 40，Y軸上下多加 20px 的容錯
             if (local_y <= 20 && local_y >= -(polePixelLength + 20) && local_x >= -40 && local_x <= 40) {
                 isDragging = true;
-                // 為了避免抓取點超出視覺棍子長度，用 Math.max 和 Math.min 限制抓取位置
                 let bounded_local_y = Math.min(0, Math.max(-polePixelLength, local_y));
                 grabPointDist = Math.abs(bounded_local_y) / scale; 
-                currentMouseX = mouseX;
-                currentMouseY = mouseY;
             }
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (isDragging) {
-                const rect = canvas.getBoundingClientRect();
-                currentMouseX = e.clientX - rect.left;
-                currentMouseY = e.clientY - rect.top;
-            }
+            const rect = canvas.getBoundingClientRect();
+            currentMouseX = e.clientX - rect.left;
+            currentMouseY = e.clientY - rect.top;
         });
 
         window.addEventListener('mouseup', () => {
+            // 如果是在抓怪物文字，判斷是否丟進結界
+            if (monster.state === 2) {
+                const centerMX = monster.x + monster.w / 2;
+                const centerMY = monster.y + monster.h / 2;
+                
+                // 檢查怪物中心點是否在牢籠範圍內
+                if (centerMX > prison.x && centerMX < prison.x + prison.w && 
+                    centerMY > prison.y && centerMY < prison.y + prison.h) {
+                    monster.state = 3; // 關起來！
+                    monster.timer = 10.0; // 倒數 10 秒
+                } else {
+                    monster.state = 0; // 沒放進去，恢復亂飄
+                    monster.vx = 0; monster.vy = 0; // 消除慣性避免瞬間暴走
+                }
+            }
+
+            // 處理放開彈弓
             if (isDragging) {
                 const cartScreenX = (canvas.width / 2) + (x - cameraX) * scale;
                 const cartScreenY = 400;
-
                 const grabScreenX = cartScreenX + (grabPointDist * scale) * Math.sin(theta);
                 const grabScreenY = cartScreenY - (grabPointDist * scale) * Math.cos(theta);
 
