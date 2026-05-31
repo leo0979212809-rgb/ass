@@ -71,7 +71,8 @@
             timer: 15.0,   
             offsetX: 0, offsetY: 0,
             attackTimer: 5.0,     
-            attackCooldown: 0.0   
+            attackCooldown: 0.0,
+            escapeAttempts: 0 // 【新增】記錄嘗試突破結界的次數
         };
 
         const getScreenY = () => canvas.height - 150;
@@ -81,10 +82,10 @@
         let hasPrintedHeader = false;
         let hasPrintedFooter = false;
 
-        // --- 【新增】新手教學(Tutorial)解鎖進度變數 ---
-        let hasFiredSlingshot = false; // 是否拉過一次彈弓
-        let isCartRecovered = false;   // 小車是否已經回復平穩
-        let recoveryWaitTimer = 0.0;   // 確保小車穩定停留在原地的計時器
+        // --- 新手教學(Tutorial)解鎖進度變數 ---
+        let hasFiredSlingshot = false; 
+        let isCartRecovered = false;   
+        let recoveryWaitTimer = 0.0;   
 
         // --- 物理引擎 ---
         function physicsStep(dt, force) {
@@ -116,20 +117,17 @@
                 hasPrintedFooter = true;
             }
 
-            // --- 【新增】檢查小車是否回復原狀 (教學階段解鎖判定) ---
+            // 檢查小車是否回復原狀 (教學階段解鎖判定)
             if (hasFiredSlingshot && !isCartRecovered) {
-                // 判斷條件：位置幾乎在原點，角度直立，且速度與角速度都很小
                 if (Math.abs(x) < 0.1 && Math.abs(theta) < 0.05 && 
                     Math.abs(x_dot) < 0.1 && Math.abs(theta_dot) < 0.1) {
                     
                     recoveryWaitTimer += dt;
-                    // 必須穩定保持 1 秒鐘，才算真正回復原狀
                     if (recoveryWaitTimer > 1.0) { 
                         isCartRecovered = true;
-                        console.log("⚠️ 教學階段完成！怪物結界解除鎖定！");
+                        console.log("⚠️ 教學階段完成！結界最終鎖定解除！");
                     }
                 } else {
-                    // 如果中途又晃動了，重新計時
                     recoveryWaitTimer = 0; 
                 }
             }
@@ -172,30 +170,35 @@
                 monster.x = prison.x + (prison.w - monster.w) / 2;
                 monster.y = prison.y + (prison.h - monster.h) / 2 + 5; 
                 
-                // 倒數計時持續進行
-                monster.timer -= dt;
+                if (monster.timer > 0) {
+                    monster.timer -= dt;
+                }
 
                 if (monster.timer <= 0) {
-                    // 【修改】時間到了，但必須等小車回復原狀 (isCartRecovered) 才能逃脫！
-                    if (isCartRecovered) {
+                    // 【修改】第 3 次且小車平穩才能逃脫
+                    if (monster.escapeAttempts < 2) {
+                        monster.escapeAttempts++;
+                        monster.timer = 10.0; // 失敗後重新倒數 10 秒
+                        console.log(`💥 怪物撞擊結界！(第 ${monster.escapeAttempts}/3 次嘗試)`);
+                    } else if (isCartRecovered) {
                         monster.state = 1; 
                         prison.isBroken = true;
                         createShatterEffect();
-                    } else {
-                        // 如果時間到了但還沒通過教學，就卡在 0 秒等待
-                        monster.timer = 0; 
+                        console.log("🚨 警告：結界破裂！怪物逃脫！");
                     }
                 }
             }
             else if (monster.state === 0) { 
+                // 【修改】待機飄浮狀態：加速度調小
                 if (Math.random() < 0.05) {
-                    monster.vx += (Math.random() - 0.5) * 4; 
-                    monster.vy += (Math.random() - 0.5) * 4;
+                    monster.vx += (Math.random() - 0.5) * 1.5; 
+                    monster.vy += (Math.random() - 0.5) * 1.5;
                 }
                 const speed = Math.hypot(monster.vx, monster.vy);
-                if (speed > 7) { 
-                    monster.vx = (monster.vx/speed)*7; 
-                    monster.vy = (monster.vy/speed)*7; 
+                // 【修改】待機飄浮狀態：最高速限從 7 大幅下修到 2.5
+                if (speed > 2.5) { 
+                    monster.vx = (monster.vx/speed)*2.5; 
+                    monster.vy = (monster.vy/speed)*2.5; 
                 }
                 
                 monster.x += monster.vx;
@@ -216,6 +219,7 @@
                 const dist = Math.hypot(dx, dy);
 
                 if (dist > 0) {
+                    // 【不變】攻擊時的衝刺速度依然維持高速 12
                     monster.vx = (dx / dist) * 12;
                     monster.vy = (dy / dist) * 12;
                 }
@@ -266,7 +270,11 @@
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
             if (!prison.isBroken) {
-                ctx.strokeStyle = '#FFFFFF'; 
+                // 【修改】依據突破次數改變結界外觀顏色 (白 -> 黃 -> 橘紅)
+                if (monster.escapeAttempts === 0) ctx.strokeStyle = '#FFFFFF';
+                else if (monster.escapeAttempts === 1) ctx.strokeStyle = '#FFC107';
+                else ctx.strokeStyle = '#FF5722';
+                
                 ctx.lineWidth = 3;
                 ctx.setLineDash([]); 
                 ctx.fillStyle = '#000000';
@@ -486,7 +494,6 @@
                 theta_dot += impulse; 
                 isDragging = false;
                 
-                // --- 【新增】標記玩家已經發射過彈弓 ---
                 hasFiredSlingshot = true;
             }
         });
