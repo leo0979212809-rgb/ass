@@ -72,7 +72,7 @@
             offsetX: 0, offsetY: 0,
             attackTimer: 5.0,     
             attackCooldown: 0.0,
-            escapeAttempts: 0 // 【新增】記錄嘗試突破結界的次數
+            escapeAttempts: 0 
         };
 
         const getScreenY = () => canvas.height - 150;
@@ -82,9 +82,10 @@
         let hasPrintedHeader = false;
         let hasPrintedFooter = false;
 
-        // --- 新手教學(Tutorial)解鎖進度變數 ---
+        // --- 【修改】系統動態穩定度判定變數 ---
         let hasFiredSlingshot = false; 
-        let isCartRecovered = false;   
+        let isCartStable = false;      // 小車是否處於「完美靜止」狀態
+        let tutorialCompleted = false; // 是否完成第一次的新手教學
         let recoveryWaitTimer = 0.0;   
 
         // --- 物理引擎 ---
@@ -117,19 +118,25 @@
                 hasPrintedFooter = true;
             }
 
-            // 檢查小車是否回復原狀 (教學階段解鎖判定)
-            if (hasFiredSlingshot && !isCartRecovered) {
-                if (Math.abs(x) < 0.1 && Math.abs(theta) < 0.05 && 
-                    Math.abs(x_dot) < 0.1 && Math.abs(theta_dot) < 0.1) {
+            // --- 【修改】全時段監控小車是否穩定 ---
+            if (Math.abs(x) < 0.1 && Math.abs(theta) < 0.05 && 
+                Math.abs(x_dot) < 0.1 && Math.abs(theta_dot) < 0.1) {
+                
+                recoveryWaitTimer += dt;
+                // 必須穩定保持 1 秒鐘，才標記為 isCartStable = true
+                if (recoveryWaitTimer > 1.0) { 
+                    isCartStable = true;
                     
-                    recoveryWaitTimer += dt;
-                    if (recoveryWaitTimer > 1.0) { 
-                        isCartRecovered = true;
+                    // 解鎖第一次的教學限制
+                    if (hasFiredSlingshot && !tutorialCompleted) {
+                        tutorialCompleted = true;
                         console.log("⚠️ 教學階段完成！結界最終鎖定解除！");
                     }
-                } else {
-                    recoveryWaitTimer = 0; 
                 }
+            } else {
+                // 只要一有晃動，穩定計時器歸零，狀態變為不穩定
+                recoveryWaitTimer = 0; 
+                isCartStable = false;
             }
         }
 
@@ -166,6 +173,7 @@
                 monster.attackCooldown -= dt;
             }
 
+            // --- 狀態 4：開場被關在結界內 ---
             if (monster.state === 4) { 
                 monster.x = prison.x + (prison.w - monster.w) / 2;
                 monster.y = prison.y + (prison.h - monster.h) / 2 + 5; 
@@ -175,12 +183,11 @@
                 }
 
                 if (monster.timer <= 0) {
-                    // 【修改】第 3 次且小車平穩才能逃脫
                     if (monster.escapeAttempts < 2) {
                         monster.escapeAttempts++;
-                        monster.timer = 10.0; // 失敗後重新倒數 10 秒
+                        monster.timer = 10.0; 
                         console.log(`💥 怪物撞擊結界！(第 ${monster.escapeAttempts}/3 次嘗試)`);
-                    } else if (isCartRecovered) {
+                    } else if (tutorialCompleted && isCartStable) {
                         monster.state = 1; 
                         prison.isBroken = true;
                         createShatterEffect();
@@ -188,14 +195,13 @@
                     }
                 }
             }
+            // --- 狀態 0：待機慢速飄浮 ---
             else if (monster.state === 0) { 
-                // 【修改】待機飄浮狀態：加速度調小
                 if (Math.random() < 0.05) {
                     monster.vx += (Math.random() - 0.5) * 1.5; 
                     monster.vy += (Math.random() - 0.5) * 1.5;
                 }
                 const speed = Math.hypot(monster.vx, monster.vy);
-                // 【修改】待機飄浮狀態：最高速限從 7 大幅下修到 2.5
                 if (speed > 2.5) { 
                     monster.vx = (monster.vx/speed)*2.5; 
                     monster.vy = (monster.vy/speed)*2.5; 
@@ -210,6 +216,7 @@
                     monster.state = 1; 
                 }
             } 
+            // --- 狀態 1：高速突襲 ---
             else if (monster.state === 1) { 
                 const targetX = cartScreenX + (polePixelLength / 2) * Math.sin(theta);
                 const targetY = screenY - (polePixelLength / 2) * Math.cos(theta);
@@ -219,7 +226,6 @@
                 const dist = Math.hypot(dx, dy);
 
                 if (dist > 0) {
-                    // 【不變】攻擊時的衝刺速度依然維持高速 12
                     monster.vx = (dx / dist) * 12;
                     monster.vy = (dy / dist) * 12;
                 }
@@ -238,25 +244,35 @@
                     monster.attackTimer = 2.0 + Math.random() * 6.0; 
                 }
             }
+            // --- 狀態 2：被滑鼠抓住 ---
             else if (monster.state === 2) { 
                 const struggleX = (Math.random() - 0.5) * 15;
                 const struggleY = (Math.random() - 0.5) * 15;
                 monster.x = currentMouseX - monster.offsetX + struggleX;
                 monster.y = currentMouseY - monster.offsetY + struggleY;
             }
+            // --- 狀態 3：被抓回結界重新關押 ---
             else if (monster.state === 3) { 
-                monster.timer -= dt; 
+                // 在結界內憤怒亂撞
+                monster.vx += (Math.random() - 0.5) * 4;
+                monster.vy += (Math.random() - 0.5) * 4;
+                const speed = Math.hypot(monster.vx, monster.vy);
+                if (speed > 5) { monster.vx = (monster.vx/speed)*5; monster.vy = (monster.vy/speed)*5; }
+                
+                monster.x += monster.vx;
+                monster.y += monster.vy;
+                bounceMonster(prison);
+
+                // 【關鍵修改】只有在車子是「完美靜止 (isCartStable)」時，倒數計時才會扣秒！
+                if (isCartStable) {
+                    monster.timer -= dt; 
+                }
+
                 if (monster.timer <= 0) {
                     monster.state = 1; 
-                } else {
-                    monster.vx += (Math.random() - 0.5) * 4;
-                    monster.vy += (Math.random() - 0.5) * 4;
-                    const speed = Math.hypot(monster.vx, monster.vy);
-                    if (speed > 5) { monster.vx = (monster.vx/speed)*5; monster.vy = (monster.vy/speed)*5; }
-                    
-                    monster.x += monster.vx;
-                    monster.y += monster.vy;
-                    bounceMonster(prison);
+                    prison.isBroken = true;
+                    createShatterEffect();
+                    console.log("🚨 怪物再次衝破結界！");
                 }
             }
         }
@@ -270,10 +286,16 @@
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
             if (!prison.isBroken) {
-                // 【修改】依據突破次數改變結界外觀顏色 (白 -> 黃 -> 橘紅)
-                if (monster.escapeAttempts === 0) ctx.strokeStyle = '#FFFFFF';
-                else if (monster.escapeAttempts === 1) ctx.strokeStyle = '#FFC107';
-                else ctx.strokeStyle = '#FF5722';
+                // 依據狀態改變結界外觀顏色
+                if (monster.state === 4) {
+                    if (monster.escapeAttempts === 0) ctx.strokeStyle = '#FFFFFF';
+                    else if (monster.escapeAttempts === 1) ctx.strokeStyle = '#FFC107';
+                    else ctx.strokeStyle = '#FF5722';
+                } else if (monster.state === 3) {
+                    ctx.strokeStyle = '#FF5722'; // 抓回來關的時候顯示橘紅色警告狀態
+                } else {
+                    ctx.strokeStyle = '#FFFFFF';
+                }
                 
                 ctx.lineWidth = 3;
                 ctx.setLineDash([]); 
@@ -360,7 +382,7 @@
             if (monster.state === 4) ctx.fillStyle = '#FFFFFF'; 
             else if (monster.state === 1) ctx.fillStyle = '#F44336'; 
             else if (monster.state === 2) ctx.fillStyle = '#FFC107'; 
-            else if (monster.state === 3) ctx.fillStyle = 'rgba(255, 87, 34, 0.7)'; 
+            else if (monster.state === 3) ctx.fillStyle = '#FF5722'; 
             else ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; 
             
             ctx.fillText("倒立擺", monster.x, monster.y);
@@ -460,11 +482,17 @@
                 const centerMX = monster.x + monster.w / 2;
                 const centerMY = monster.y + monster.h / 2;
                 
+                // 【修改】判斷是否拖曳回結界內
                 if (centerMX > prison.x && centerMX < prison.x + prison.w && 
                     centerMY > prison.y && centerMY < prison.y + prison.h) {
-                    monster.state = 3; 
-                    monster.timer = 10.0 + Math.random() * 5.0; 
+                    
+                    monster.state = 3; // 進入重新關押狀態
+                    monster.timer = 5.0; // 需要小車穩定 5 秒鐘才能逃脫
+                    prison.isBroken = false; // 瞬間修復玻璃！
+                    console.log("🔒 怪物被重新關入結界！等待倒立擺穩定中...");
+                    
                 } else {
+                    // 如果只是在外面放開，重新開始攻擊倒數
                     monster.state = 0; 
                     monster.vx = 0; monster.vy = 0; 
                     monster.attackTimer = 2.0 + Math.random() * 6.0; 
