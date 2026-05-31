@@ -444,3 +444,8 @@
     </script>
 </body>
 </html>
+// 假設你有一個外部變數 let time = 0;
+// 每經過一幀 time += dt;
+if (time < 10.0) { // 只記錄前 10 秒
+    console.log(`${time.toFixed(2)}, ${theta.toFixed(4)}, ${x.toFixed(4)}, ${force.toFixed(2)}`);
+}
