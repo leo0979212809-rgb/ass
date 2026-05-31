@@ -76,6 +76,17 @@
 
         const getScreenY = () => canvas.height - 150;
 
+        // --- 數據採集專用變數 ---
+        let simulationTime = 0.0;
+        let hasPrintedHeader = false;
+        let hasPrintedFooter = false;
+
+        // --- 【新增】新手教學(Tutorial)解鎖進度變數 ---
+        let hasFiredSlingshot = false; // 是否拉過一次彈弓
+        let isCartRecovered = false;   // 小車是否已經回復平穩
+        let recoveryWaitTimer = 0.0;   // 確保小車穩定停留在原地的計時器
+
+        // --- 物理引擎 ---
         function physicsStep(dt, force) {
             const totalMass = M + m;
             const ml = m * l;
@@ -91,6 +102,37 @@
             theta_dot += theta_acc * dt;
             x += x_dot * dt;
             theta += theta_dot * dt;
+
+            // 自動數據採集 (前 10 秒)
+            simulationTime += dt;
+            if (!hasPrintedHeader) {
+                console.log("Time(s), Theta(rad), Position_X(m), Force(N)");
+                hasPrintedHeader = true;
+            }
+            if (simulationTime <= 10.0) {
+                console.log(`${simulationTime.toFixed(2)}, ${theta.toFixed(4)}, ${x.toFixed(4)}, ${force.toFixed(2)}`);
+            } else if (!hasPrintedFooter) {
+                console.log("--- 前 10 秒數據採集結束，你可以去寫報告了！ ---");
+                hasPrintedFooter = true;
+            }
+
+            // --- 【新增】檢查小車是否回復原狀 (教學階段解鎖判定) ---
+            if (hasFiredSlingshot && !isCartRecovered) {
+                // 判斷條件：位置幾乎在原點，角度直立，且速度與角速度都很小
+                if (Math.abs(x) < 0.1 && Math.abs(theta) < 0.05 && 
+                    Math.abs(x_dot) < 0.1 && Math.abs(theta_dot) < 0.1) {
+                    
+                    recoveryWaitTimer += dt;
+                    // 必須穩定保持 1 秒鐘，才算真正回復原狀
+                    if (recoveryWaitTimer > 1.0) { 
+                        isCartRecovered = true;
+                        console.log("⚠️ 教學階段完成！怪物結界解除鎖定！");
+                    }
+                } else {
+                    // 如果中途又晃動了，重新計時
+                    recoveryWaitTimer = 0; 
+                }
+            }
         }
 
         function bounceMonster(bounds) {
@@ -129,22 +171,28 @@
             if (monster.state === 4) { 
                 monster.x = prison.x + (prison.w - monster.w) / 2;
                 monster.y = prison.y + (prison.h - monster.h) / 2 + 5; 
+                
+                // 倒數計時持續進行
                 monster.timer -= dt;
 
                 if (monster.timer <= 0) {
-                    monster.state = 1; 
-                    prison.isBroken = true;
-                    createShatterEffect();
+                    // 【修改】時間到了，但必須等小車回復原狀 (isCartRecovered) 才能逃脫！
+                    if (isCartRecovered) {
+                        monster.state = 1; 
+                        prison.isBroken = true;
+                        createShatterEffect();
+                    } else {
+                        // 如果時間到了但還沒通過教學，就卡在 0 秒等待
+                        monster.timer = 0; 
+                    }
                 }
             }
             else if (monster.state === 0) { 
-                // 【修改】大幅提升亂跑時的加速度與神經質程度
                 if (Math.random() < 0.05) {
                     monster.vx += (Math.random() - 0.5) * 4; 
                     monster.vy += (Math.random() - 0.5) * 4;
                 }
                 const speed = Math.hypot(monster.vx, monster.vy);
-                // 【修改】將最高速限從 2 提升到 7
                 if (speed > 7) { 
                     monster.vx = (monster.vx/speed)*7; 
                     monster.vy = (monster.vy/speed)*7; 
@@ -437,6 +485,9 @@
                 
                 theta_dot += impulse; 
                 isDragging = false;
+                
+                // --- 【新增】標記玩家已經發射過彈弓 ---
+                hasFiredSlingshot = true;
             }
         });
 
@@ -444,8 +495,3 @@
     </script>
 </body>
 </html>
-// 假設你有一個外部變數 let time = 0;
-// 每經過一幀 time += dt;
-if (time < 10.0) { // 只記錄前 10 秒
-    console.log(`${time.toFixed(2)}, ${theta.toFixed(4)}, ${x.toFixed(4)}, ${force.toFixed(2)}`);
-}
