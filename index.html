@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>6767676767676767676767676767676767676767676767676767676767676767676767676767676767676767676767676767</title>
+    <title>倒立擺系統與 PID 控制器動態沙盒</title>
     <style>
         body {
             margin: 0;
@@ -18,9 +18,94 @@
             background-color: #2b2b2b;
             cursor: crosshair; 
         }
+        
+        /* --- 【新增】UI 控制面板樣式 --- */
+        #controlPanel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(30, 30, 30, 0.85);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #444;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            width: 320px;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+        }
+        #controlPanel h3 {
+            margin: 0 0 15px 0;
+            font-size: 18px;
+            color: #4CAF50;
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+        .val-display {
+            font-weight: bold;
+            color: #fff;
+        }
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+            accent-color: #4CAF50;
+        }
+        /* 特別區分角度與位置的顏色 */
+        .theta-group input[type=range] { accent-color: #FF9800; }
+        .x-group input[type=range] { accent-color: #03A9F4; }
+        
+        #resetBtn {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            background-color: #F44336;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        #resetBtn:hover {
+            background-color: #D32F2F;
+        }
     </style>
 </head>
 <body>
+
+    <div id="controlPanel">
+        <h3>即時 PID 參數調校 (Tuning)</h3>
+        
+        <div class="control-group theta-group">
+            <label><span>Kp,θ (角度比例)</span> <span id="val_kp_theta" class="val-display">300.0</span></label>
+            <input type="range" id="slider_kp_theta" min="0" max="800" step="5" value="300">
+        </div>
+        <div class="control-group theta-group">
+            <label><span>Kd,θ (角度微分/阻尼)</span> <span id="val_kd_theta" class="val-display">60.0</span></label>
+            <input type="range" id="slider_kd_theta" min="0" max="150" step="1" value="60">
+        </div>
+        
+        <div style="height: 10px;"></div> <div class="control-group x-group">
+            <label><span>Kp,x (位置比例)</span> <span id="val_kp_x" class="val-display">3.0</span></label>
+            <input type="range" id="slider_kp_x" min="0" max="30" step="0.5" value="3">
+        </div>
+        <div class="control-group x-group">
+            <label><span>Kd,x (位置微分/煞車)</span> <span id="val_kd_x" class="val-display">8.0</span></label>
+            <input type="range" id="slider_kd_x" min="0" max="50" step="0.5" value="8">
+        </div>
+
+        <button id="resetBtn">🚀 重置為最佳參數</button>
+    </div>
 
     <canvas id="simCanvas"></canvas>
 
@@ -49,10 +134,11 @@
         let theta = 0.05;     
         let theta_dot = 0.0;  
 
-        const Kp_theta = 300.0; 
-        const Kd_theta = 60.0;
-        const Kp_x = 3.0;  
-        const Kd_x = 8.0;
+        // --- 【修改】將 const 改為 let，允許動態修改 ---
+        let Kp_theta = 300.0; 
+        let Kd_theta = 60.0;
+        let Kp_x = 3.0;  
+        let Kd_x = 8.0;
 
         let isDragging = false;       
         let grabPointDist = 0;        
@@ -81,11 +167,51 @@
         let hasPrintedHeader = false;
         let hasPrintedFooter = false;
 
-        // --- 【修改】上台報告控制節奏變數 ---
-        let isCartStable = false;             // 小車當前是否處於完美靜止
-        let recoveryWaitTimer = 0.0;          // 穩定計時器
-        let slingshotFiredThisCycle = false;  // 記錄這回合是否拉過彈弓
-        let successfulRecoveries = 0;         // 成功承受彈弓並回穩的次數
+        // --- 上台報告控制節奏變數 ---
+        let isCartStable = false;             
+        let recoveryWaitTimer = 0.0;          
+        let slingshotFiredThisCycle = false;  
+        let successfulRecoveries = 0;         
+
+        // --- 【新增】綁定 UI 滑桿事件 ---
+        function bindSlider(sliderId, displayId, variableName) {
+            const slider = document.getElementById(sliderId);
+            const display = document.getElementById(displayId);
+            slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                display.innerText = val.toFixed(1);
+                // 使用 eval 動態更新變數 (僅限此處簡單綁定使用)
+                if(variableName === 'Kp_theta') Kp_theta = val;
+                if(variableName === 'Kd_theta') Kd_theta = val;
+                if(variableName === 'Kp_x') Kp_x = val;
+                if(variableName === 'Kd_x') Kd_x = val;
+            });
+        }
+        
+        bindSlider('slider_kp_theta', 'val_kp_theta', 'Kp_theta');
+        bindSlider('slider_kd_theta', 'val_kd_theta', 'Kd_theta');
+        bindSlider('slider_kp_x', 'val_kp_x', 'Kp_x');
+        bindSlider('slider_kd_x', 'val_kd_x', 'Kd_x');
+
+        // 重置按鈕邏輯
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            Kp_theta = 300.0;
+            Kd_theta = 60.0;
+            Kp_x = 3.0;
+            Kd_x = 8.0;
+            
+            document.getElementById('slider_kp_theta').value = 300;
+            document.getElementById('val_kp_theta').innerText = "300.0";
+            
+            document.getElementById('slider_kd_theta').value = 60;
+            document.getElementById('val_kd_theta').innerText = "60.0";
+            
+            document.getElementById('slider_kp_x').value = 3;
+            document.getElementById('val_kp_x').innerText = "3.0";
+            
+            document.getElementById('slider_kd_x').value = 8;
+            document.getElementById('val_kd_x').innerText = "8.0";
+        });
 
         // --- 物理引擎 ---
         function physicsStep(dt, force) {
@@ -104,7 +230,7 @@
             x += x_dot * dt;
             theta += theta_dot * dt;
 
-            // 自動數據採集 (前 10 秒)
+            // 自動數據採集
             simulationTime += dt;
             if (!hasPrintedHeader) {
                 console.log("Time(s), Theta(rad), Position_X(m), Force(N)");
@@ -117,28 +243,20 @@
                 hasPrintedFooter = true;
             }
 
-            // --- 【修改】全時段監控小車穩定與干擾抵抗次數 ---
+            // 全時段監控小車穩定與干擾抵抗次數
             if (Math.abs(x) < 0.1 && Math.abs(theta) < 0.05 && 
                 Math.abs(x_dot) < 0.1 && Math.abs(theta_dot) < 0.1) {
                 
                 recoveryWaitTimer += dt;
-                // 必須穩定保持 1 秒鐘，才標記為 isCartStable
                 if (recoveryWaitTimer > 1.0 && !isCartStable) { 
                     isCartStable = true;
-                    
-                    // 如果這回合有受到彈弓干擾且現在回穩了，增加成功次數
                     if (slingshotFiredThisCycle) {
                         successfulRecoveries++;
-                        slingshotFiredThisCycle = false; // 重置狀態準備迎接下一次干擾
+                        slingshotFiredThisCycle = false; 
                         console.log(`🎓 成功抵抗干擾並回穩！目前完成次數：${successfulRecoveries}/3`);
-                        
-                        if (successfulRecoveries === 3) {
-                            console.log("⚠️ 達成 3 次完美平衡！結界即將在下一次撞擊時破碎！");
-                        }
                     }
                 }
             } else {
-                // 只要一有晃動，穩定計時器歸零
                 recoveryWaitTimer = 0; 
                 isCartStable = false;
             }
@@ -177,7 +295,6 @@
                 monster.attackCooldown -= dt;
             }
 
-            // --- 狀態 4：開場被關在結界內 ---
             if (monster.state === 4) { 
                 monster.x = prison.x + (prison.w - monster.w) / 2;
                 monster.y = prison.y + (prison.h - monster.h) / 2 + 5; 
@@ -187,19 +304,15 @@
                 }
 
                 if (monster.timer <= 0) {
-                    // 【修改】必須累積至少 3 次彈弓穩定，且當下是穩定狀態，才能破窗
                     if (successfulRecoveries < 3) {
-                        monster.timer = 8.0; // 撞擊失敗，重新倒數
-                        console.log(`💥 怪物撞擊結界！但結界仍然穩固 (報告展示中: ${successfulRecoveries}/3)`);
+                        monster.timer = 8.0; 
                     } else if (isCartStable) {
                         monster.state = 1; 
                         prison.isBroken = true;
                         createShatterEffect();
-                        console.log("🚨 警告：結界破裂！怪物逃脫！");
                     }
                 }
             }
-            // --- 狀態 0：待機慢速飄浮 ---
             else if (monster.state === 0) { 
                 if (Math.random() < 0.05) {
                     monster.vx += (Math.random() - 0.5) * 1.5; 
@@ -220,7 +333,6 @@
                     monster.state = 1; 
                 }
             } 
-            // --- 狀態 1：高速突襲 ---
             else if (monster.state === 1) { 
                 const targetX = cartScreenX + (polePixelLength / 2) * Math.sin(theta);
                 const targetY = screenY - (polePixelLength / 2) * Math.cos(theta);
@@ -248,14 +360,12 @@
                     monster.attackTimer = 2.0 + Math.random() * 6.0; 
                 }
             }
-            // --- 狀態 2：被滑鼠抓住 ---
             else if (monster.state === 2) { 
                 const struggleX = (Math.random() - 0.5) * 15;
                 const struggleY = (Math.random() - 0.5) * 15;
                 monster.x = currentMouseX - monster.offsetX + struggleX;
                 monster.y = currentMouseY - monster.offsetY + struggleY;
             }
-            // --- 狀態 3：被抓回結界重新關押 ---
             else if (monster.state === 3) { 
                 monster.vx += (Math.random() - 0.5) * 4;
                 monster.vy += (Math.random() - 0.5) * 4;
@@ -266,7 +376,6 @@
                 monster.y += monster.vy;
                 bounceMonster(prison);
 
-                // 只有在車子是「完美靜止」時，重新關押的倒數計時才會扣秒！
                 if (isCartStable) {
                     monster.timer -= dt; 
                 }
@@ -275,7 +384,6 @@
                     monster.state = 1; 
                     prison.isBroken = true;
                     createShatterEffect();
-                    console.log("🚨 怪物再次衝破結界！");
                 }
             }
         }
@@ -289,12 +397,11 @@
             const cartScreenX = screenCenter + (x - cameraX) * scale;
 
             if (!prison.isBroken) {
-                // 【修改】依據「成功抵抗次數」來改變玻璃的顏色，展現結界越來越薄弱
                 if (monster.state === 4) {
-                    if (successfulRecoveries === 0) ctx.strokeStyle = '#FFFFFF';      // 0次：白
-                    else if (successfulRecoveries === 1) ctx.strokeStyle = '#FFEB3B'; // 1次：黃
-                    else if (successfulRecoveries === 2) ctx.strokeStyle = '#FF9800'; // 2次：橘
-                    else ctx.strokeStyle = '#FF5722';                                 // 3次以上：橘紅(隨時會破)
+                    if (successfulRecoveries === 0) ctx.strokeStyle = '#FFFFFF';      
+                    else if (successfulRecoveries === 1) ctx.strokeStyle = '#FFEB3B'; 
+                    else if (successfulRecoveries === 2) ctx.strokeStyle = '#FF9800'; 
+                    else ctx.strokeStyle = '#FF5722';                                 
                 } else if (monster.state === 3) {
                     ctx.strokeStyle = '#FF5722'; 
                 } else {
@@ -432,6 +539,7 @@
 
             updateMonster(dt);
 
+            // 【套用動態變數】此處使用 global let 變數
             let controlForce = (Kp_theta * theta) + 
                                (Kd_theta * theta_dot) + 
                                (Kp_x * x) + 
@@ -451,6 +559,9 @@
             
             currentMouseX = mouseX;
             currentMouseY = mouseY;
+
+            // 確保沒有點擊到 UI 面板
+            if (mouseX > canvas.width - 340 && mouseY < 280) return;
 
             if (monster.state !== 4 && 
                 mouseX >= monster.x && mouseX <= monster.x + monster.w && 
@@ -492,7 +603,6 @@
                     monster.state = 3; 
                     monster.timer = 5.0; 
                     prison.isBroken = false; 
-                    console.log("🔒 怪物被重新關入結界！等待倒立擺穩定中...");
                     
                 } else {
                     monster.state = 0; 
@@ -524,7 +634,6 @@
                 theta_dot += impulse; 
                 isDragging = false;
                 
-                // 【修改】標記此回合發射過彈弓，並切換狀態為不穩定，等待系統回穩
                 slingshotFiredThisCycle = true;
                 isCartStable = false; 
                 recoveryWaitTimer = 0;
